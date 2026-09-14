@@ -3,7 +3,7 @@ import { useState } from "react"
 import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 
 export default function FeedPage() {
-  const [activos, setActivos] = useState<any[]>([])
+  const [activos, setActivos] = useState<Array<{ id: string; username?: string | null; email?: string | null }>>([])
   const [show, setShow] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -31,7 +31,7 @@ export default function FeedPage() {
       {show && (
         <div className="mt-6">
           <p className="mb-2">Encontrados: {activos.length}</p>
-          {activos.map((p:any) => (
+          {activos.map((p) => (
             <div key={p.id} className="border p-3 rounded mb-2">
               {p.username || p.email || p.id}
             </div>
