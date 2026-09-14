@@ -1,6 +1,6 @@
 "use client"
 import { useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { isSupabaseConfigured, supabase } from "@/lib/supabase"
 
 export default function FeedPage() {
   const [activos, setActivos] = useState<any[]>([])
@@ -8,6 +8,11 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(false)
 
   const verActivos = async () => {
+    if (!isSupabaseConfigured || !supabase) {
+      setShow(true)
+      setActivos([])
+      return
+    }
     setLoading(true)
     setShow(true)
     // Quitamos el filtro para probar que trae gente

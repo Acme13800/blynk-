@@ -1,114 +1,62 @@
 "use client";
-import { useState, useRef } from "react";
 
-const COUNTRIES = [
-  { code: "MX", flag: "🇲🇽", name: "México" }, { code: "ES", flag: "🇪🇸", name: "España" },
-  { code: "US", flag: "🇺🇸", name: "USA" }, { code: "CO", flag: "🇨🇴", name: "Colombia" },
-  { code: "AR", flag: "🇦🇷", name: "Argentina" }, { code: "BR", flag: "🇧🇷", name: "Brasil" },
-  { code: "IT", flag: "🇮🇹", name: "Italia" }, { code: "FR", flag: "🇫🇷", name: "Francia" },
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+
+type Tab = "discover" | "community" | "messages" | "profile";
+type Language = "es" | "en";
+
+const people = [
+  { id: "sofia", name: "Sofía", age: 24, place: "Ciudad de México", emoji: "☕", accent: "from-orange-400 via-rose-500 to-violet-700", intro: "Una caminata, un café y una conversación sin prisa.", tags: ["Viajes", "Fotografía", "Café"], video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
+  { id: "mila", name: "Mila", age: 26, place: "Barcelona", emoji: "🎨", accent: "from-fuchsia-600 via-purple-600 to-sky-700", intro: "Arte, mar y una playlist que cambia cada viernes.", tags: ["Arte", "Música", "Yoga"], video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
+  { id: "camila", name: "Camila", age: 25, place: "Medellín", emoji: "🌿", accent: "from-emerald-500 via-teal-700 to-slate-900", intro: "Me gusta descubrir lugares nuevos y reír sin filtros.", tags: ["Senderismo", "Cine", "Comida"], video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
 ];
 
-export default function BlynkTikTokFixed() {
-  const [showFilters, setShowFilters] = useState(false);
-  const [pendingMatch, setPendingMatch] = useState<any>(null);
-  const [activeChat, setActiveChat] = useState<any>(null);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [newMsg, setNewMsg] = useState("");
-  const [current, setCurrent] = useState(0);
+const copy = {
+  es: { discover: "Descubrir", community: "Comunidad", messages: "Mensajes", profile: "Perfil", forYou: "Para ti", nearby: "Cerca", request: "Solicitar match", skip: "Siguiente", swipe: "Desliza hacia arriba para ver otro video", share: "Comparte más allá de las citas", publish: "Publicar", thought: "¿Qué estás pensando?", addVideo: "Agregar video", comments: "Comentarios", comment: "Comentar", send: "Enviar", public: "Público", private: "Privado", hidden: "Oculto", edit: "Editar", delete: "Borrar", settings: "Ajustes", logOut: "Cerrar sesión", gallery: "Galería", addMedia: "Agregar fotos o videos", matched: "¡Solicitud enviada!", profileReady: "Tu perfil", report: "Reportar", block: "Bloquear", hide: "Esconder", reply: "Responder", copy: "Copiar", disableComments: "Desactivar comentarios" },
+  en: { discover: "Discover", community: "Community", messages: "Messages", profile: "Profile", forYou: "For you", nearby: "Nearby", request: "Request match", skip: "Next", swipe: "Swipe up for another video", share: "Share beyond dating", publish: "Publish", thought: "What are you thinking?", addVideo: "Add video", comments: "Comments", comment: "Comment", send: "Send", public: "Public", private: "Private", hidden: "Hidden", edit: "Edit", delete: "Delete", settings: "Settings", logOut: "Log out", gallery: "Gallery", addMedia: "Add photos or videos", matched: "Match request sent!", profileReady: "Your profile", report: "Report", block: "Block", hide: "Hide", reply: "Reply", copy: "Copy", disableComments: "Disable comments" },
+};
+
+export default function BlynkHome() {
+  const [tab, setTab] = useState<Tab>("discover");
+  const [language, setLanguage] = useState<Language>("es");
+  const [personIndex, setPersonIndex] = useState(0);
   const [toast, setToast] = useState("");
+  const [postText, setPostText] = useState("");
+  const [posts, setPosts] = useState([{ id: 1, author: "Luis Hernandez", initial: "L", time: "Ahora", text: "Busco una conversación honesta. ¿Cuál es el mejor consejo que te han dado?", likes: 4, commentsEnabled: true, comments: ["Me encanta esa pregunta ✨"] }]);
+  const [comment, setComment] = useState("");
+  const [menu, setMenu] = useState<number | null>(null);
+  const [chat, setChat] = useState([{ from: "Sofía", text: "¡Hola! Me gustó tu video de presentación." }, { from: "me", text: "¡Gracias! El tuyo se ve increíble." }]);
+  const [message, setMessage] = useState("");
+  const [media, setMedia] = useState<string[]>([]);
+  const [privacy, setPrivacy] = useState("Público");
   const startY = useRef(0);
+  const t = copy[language];
+  const person = people[personIndex];
 
-  const myProfile = { name:"Tú", age:"26", flag:"🇲🇽", state:"California", photo:"https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200", bio:"Listo para conectar 🔥", height:"175", weight:"70", eyes:"Cafés", hair:"Negro", religion:"Católica", langs:"Español, Inglés" };
+  const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
+  const nextPerson = () => setPersonIndex((value) => (value + 1) % people.length);
+  const onTouchStart = (event: React.TouchEvent) => { startY.current = event.touches[0].clientY; };
+  const onTouchEnd = (event: React.TouchEvent) => { if (startY.current - event.changedTouches[0].clientY > 55) nextPerson(); };
+  const addPost = () => { if (!postText.trim()) return; setPosts((items) => [{ id: Date.now(), author: "Luis Hernandez", initial: "L", time: "Ahora", text: postText.trim(), likes: 0, commentsEnabled: true, comments: [] }, ...items]); setPostText(""); notify(language === "es" ? "Publicación compartida" : "Post shared"); };
+  const addComment = (postId: number) => { if (!comment.trim()) return; setPosts((items) => items.map((post) => post.id === postId ? { ...post, comments: [...post.comments, comment.trim()] } : post)); setComment(""); };
+  const uploadMedia = (event: ChangeEvent<HTMLInputElement>) => { const files = Array.from(event.target.files ?? []); setMedia((current) => [...current, ...files.slice(0, Math.max(0, 6 - current.length)).map((file) => URL.createObjectURL(file))]); };
+  const sendMessage = (event: FormEvent) => { event.preventDefault(); if (!message.trim()) return; setChat((items) => [...items, { from: "me", text: message.trim() }]); setMessage(""); };
 
-  const users = [
-    { id:1, name:"Sofía", age:24, flags:["🇲🇽","🇪🇸"], codes:["MX","ES"], bio:"Aventurera & café ☕ ¿Vamos por uno? Me encantan las charlas profundas", tags:["Viajes","Arte"], img:"https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800", online:true, state:"CDMX", height:165, weight:55, eyes:"Cafés", hair:"Castaño", religion:"Católica", langs:["Español","Inglés"] },
-    { id:2, name:"Marcus", age:26, flags:["🇺🇸"], codes:["US"], bio:"Gym y buenas vibras 💪 Busco conexión real", tags:["Gym","Música"], img:"https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=800", online:true, state:"California", height:182, weight:80, eyes:"Azules", hair:"Castaño", religion:"Cristiana", langs:["Inglés"] },
-    { id:3, name:"Luna", age:21, flags:["🇨🇴"], codes:["CO"], bio:"Bailarina profesional 🌅 Energía positiva siempre ✨", tags:["Baile","Yoga"], img:"https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=800", online:true, state:"Bogotá", height:168, weight:52, eyes:"Verdes", hair:"Negro", religion:"Católica", langs:["Español"] },
-    { id:4, name:"Emma", age:23, flags:["🇺🇸"], codes:["US"], bio:"California girl 🌊 Surf y atardeceres", tags:["Surf","Yoga"], img:"https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800", online:true, state:"California", height:170, weight:58, eyes:"Azules", hair:"Rubio", religion:"Agnóstica", langs:["Inglés","Español"] },
-    { id:5, name:"Valentina", age:22, flags:["🇦🇷"], codes:["AR"], bio:"Fotógrafa y viajera 📸", tags:["Foto","Viajes"], img:"https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=800", online:true, state:"Buenos Aires", height:172, weight:54, eyes:"Cafés", hair:"Negro", religion:"Católica", langs:["Español"] },
-  ];
+  useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowDown") nextPerson(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
 
-  const [filters, setFilters] = useState({ nationalities: [] as string[], religion:"", eyes:"", hair:"", language:"" });
-  const filtered = users.filter(u=> filters.nationalities.length===0 || u.codes.some((c:string)=>filters.nationalities.includes(c)));
-  const p = filtered[current % filtered.length];
-
-  const next = () => setCurrent(c => (c+1) % filtered.length);
-  const prev = () => setCurrent(c => (c-1+filtered.length) % filtered.length);
-
-  const handleTouchStart = (e:any) => startY.current = e.touches[0].clientY;
-  const handleTouchEnd = (e:any) => {
-    const diff = startY.current - e.changedTouches[0].clientY;
-    if(Math.abs(diff) > 50){ if(diff>0) next(); else prev(); }
-  };
-  const handleWheel = (e:any) => { if(Math.abs(e.deltaY)>30){ if(e.deltaY>0) next(); else prev(); } };
-
-  const handleLike = () => {
-    setPendingMatch({
-      receiver: p,
-      sender: myProfile
-    });
-  };
-
-  return (
-    <div className="h-[100dvh] w-screen bg-black overflow-hidden relative flex" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} onWheel={handleWheel}>
-      {/* FONDO BORROSO - YA NO HAY NEGRO */}
-      <div className="absolute inset-0"><img src={p.img} className="w-full h-full object-cover blur-[40px] brightness-[0.4] scale-110" /><div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-black/80" /></div>
-
-      <div className="relative z-10 w-full max-w-[1600px] mx-auto flex h-full">
-        {/* IZQUIERDA */}
-        <div className="hidden lg:flex w-[350px] p-6 flex-col gap-4">
-          <h1 className="text-3xl font-black text-white">🔥Blynk</h1>
-          <div className="bg-white/10 backdrop-blur-xl rounded-[24px] p-5 border border-white/20 mt-4">
-            <p className="text-white font-bold">🎯 Filtros</p><p className="text-white/60 text-xs mt-1">{filtered.length} personas con video</p>
-            <button onClick={()=>setShowFilters(true)} className="w-full mt-4 bg-white text-black font-bold py-3 rounded-full text-sm">Abrir filtros PRO</button>
-            <div className="flex flex-wrap gap-2 mt-3">{COUNTRIES.map(c=>{const sel=filters.nationalities.includes(c.code); return <button key={c.code} onClick={()=>setFilters({...filters, nationalities: sel? filters.nationalities.filter(x=>x!==c.code) : [...filters.nationalities, c.code]})} className={`px-3 py-1 rounded-full text-xs border ${sel? 'bg-white text-black border-white' : 'bg-white/10 text-white/60 border-white/10'}`}>{c.flag} {c.code}</button>})}</div>
-          </div>
-          <div className="bg-white/10 backdrop-blur-xl rounded-[24px] p-4 border border-white/10"><p className="text-white/50 text-xs">TIP</p><p className="text-white text-sm mt-1">👆 Desliza con el dedo<br/>🖱️ Usa la rueda del mouse<br/>⌨️ Usa ↑ ↓ del teclado</p></div>
-        </div>
-
-        {/* CENTRO TIKTOK REAL - 1 VIDEO A LA VEZ */}
-        <div className="flex-1 flex justify-center items-center p-0 lg:p-6">
-          <div className="relative w-full max-w-[400px] h-[100dvh] lg:h-[85vh] lg:rounded-[32px] overflow-hidden bg-black shadow-2xl border-0 lg:border border-white/10">
-            <img src={p.img} className="absolute inset-0 w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/40 pointer-events-none" />
-
-            <div className="absolute top-0 w-full p-4 flex justify-between z-20"><span className="bg-black/50 backdrop-blur-xl px-3 py-1.5 rounded-full text-white text-xs border border-white/20">📍 {p.state} • LIVE</span><div className="flex gap-2"><button onClick={prev} className="w-8 h-8 bg-black/50 backdrop-blur rounded-full text-white border border-white/20">↑</button><button onClick={next} className="w-8 h-8 bg-black/50 backdrop-blur rounded-full text-white border border-white/20">↓</button></div></div>
-
-            {/* Botones derecha */}
-            <div className="absolute right-3 bottom-36 flex flex-col gap-4 z-20"><button className="w-12 h-12 bg-white/15 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/20 text-white text-xl">❤️</button><button className="w-12 h-12 bg-white/15 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/20 text-white text-xl">💬</button></div>
-
-            <div className="absolute bottom-0 w-full p-5 pb-8 z-20">
-              <div className="flex gap-2 mb-2">{p.flags.map((f,i)=><span key={i} className="text-2xl">{f}</span>)}<span className="bg-green-500 text-white text-[10px] px-2 py-1 rounded-full font-bold">● LIVE</span></div>
-              <h2 className="text-white font-black text-[28px]">{p.name}, {p.age}</h2>
-              <p className="text-white/70 text-xs mt-1">📏 {p.height}cm • ⚖️ {p.weight}kg • 👁️ {p.eyes} • 🙏 {p.religion}</p>
-              <p className="text-white text-[15px] mt-2">{p.bio}</p>
-              <div className="flex gap-2 mt-3">{p.tags.map((t:string)=><span key={t} className="bg-white/15 backdrop-blur border border-white/10 text-white text-xs px-3 py-1 rounded-full">{t}</span>)}</div>
-              <div className="flex gap-3 mt-5"><button onClick={prev} className="flex-1 h-[52px] rounded-full bg-white/15 backdrop-blur border border-white/20 text-white font-bold text-xl">✕</button><button onClick={handleLike} className="flex-[2] h-[52px] rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold shadow-xl">❤️ Me gusta</button></div>
-              <p className="text-white/40 text-[11px] text-center mt-3">Desliza ↑↓ o usa rueda del mouse • {current+1}/{filtered.length}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* DERECHA */}
-        <div className="hidden lg:flex w-[350px] p-6 flex-col gap-4">
-          <div className="bg-white/10 backdrop-blur-xl rounded-[24px] p-4 border border-white/20"><p className="text-white font-bold">🔥 En vivo ({filtered.length})</p><div className="mt-3 space-y-2">{filtered.map((u,i)=><button key={u.id} onClick={()=>setCurrent(i)} className={`w-full flex gap-3 p-2 rounded-xl border text-left ${i===current? 'bg-white text-black border-white' : 'bg-white/5 border-white/10 text-white/70'}`}><img src={u.img} className="w-10 h-10 rounded-full object-cover" /><div><p className="text-xs font-bold">{u.name} • {u.state}</p><p className="text-[10px] opacity-70">{u.height}cm • {u.eyes}</p></div></button>)}</div></div>
-        </div>
-      </div>
-
-      {/* MODAL ACEPTAR/RECHAZAR CON INFO COMPLETA */}
-      {pendingMatch && <div className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex items-center justify-center p-4"><div className="bg-[#16161f] w-full max-w-[380px] rounded-[32px] overflow-hidden border border-white/10">
-        <div className="bg-gradient-to-r from-pink-500/20 to-purple-500/20 p-3 text-center border-b border-white/10"><p className="text-pink-300 text-xs font-bold">💌 ¡Alguien te dio like!</p><p className="text-white/60 text-[11px]">Mira su info completa y decide</p></div>
-        <div className="relative h-72"><img src={pendingMatch.sender.photo} className="w-full h-full object-cover" /><div className="absolute inset-0 bg-gradient-to-t from-[#16161f] to-transparent" /><div className="absolute bottom-3 left-4 right-4"><h2 className="text-white font-black text-2xl">{pendingMatch.sender.name}, {pendingMatch.sender.age} {pendingMatch.sender.flag}</h2><p className="text-white/70 text-xs">📍 {pendingMatch.sender.state} • 📏 {pendingMatch.sender.height}cm • ⚖️ {pendingMatch.sender.weight}kg</p></div></div>
-        <div className="p-5">
-          <div className="flex flex-wrap gap-2 mb-3"><span className="bg-white/10 text-white text-xs px-3 py-1 rounded-full">👁️ {pendingMatch.sender.eyes}</span><span className="bg-white/10 text-white text-xs px-3 py-1 rounded-full">💇 {pendingMatch.sender.hair}</span><span className="bg-white/10 text-white text-xs px-3 py-1 rounded-full">🙏 {pendingMatch.sender.religion}</span><span className="bg-white/10 text-white text-xs px-3 py-1 rounded-full">🗣️ {pendingMatch.sender.langs}</span></div>
-          <p className="bg-white/5 border border-white/10 p-3 rounded-2xl text-white/80 text-sm">"{pendingMatch.sender.bio}"</p>
-          <div className="flex gap-3 mt-5"><button onClick={()=>{setPendingMatch(null); setToast("❌ Rechazado"); setTimeout(()=>setToast(""),2000); next();}} className="flex-1 h-12 rounded-full bg-white/10 border border-white/20 text-white font-bold">✕ Rechazar</button><button onClick={()=>{setPendingMatch(null); setActiveChat(pendingMatch.receiver); setMessages([{from: pendingMatch.receiver.name, text:`¡Hola! Acepté tu match 💖 Soy ${pendingMatch.receiver.name}`}])}} className="flex-1 h-12 rounded-full bg-gradient-to-r from-pink-500 to-purple-500 text-white font-bold">❤️ Aceptar</button></div>
-        </div>
-      </div></div>}
-
-      {activeChat && <div className="fixed inset-0 bg-black z-[110] flex justify-center"><div className="w-full max-w-[430px] bg-[#0a0a0f] h-[100dvh] flex flex-col"><div className="p-4 flex gap-3 items-center border-b border-white/10"><button onClick={()=>setActiveChat(null)} className="w-8 h-8 bg-white/10 rounded-full text-white">←</button><img src={activeChat.img} className="w-10 h-10 rounded-full" /><p className="text-white font-bold">{activeChat.name} • {activeChat.state}</p></div><div className="flex-1 p-4 space-y-3 overflow-y-auto">{messages.map((m,i)=><div key={i} className={`max-w-[80%] p-3 rounded-2xl text-sm ${m.from===activeChat.name? 'bg-white/10 text-white' : 'bg-gradient-to-r from-pink-500 to-purple-500 text-white ml-auto'}`}>{m.text}</div>)}</div><div className="p-4 border-t border-white/10 flex gap-2"><input value={newMsg} onChange={e=>setNewMsg(e.target.value)} placeholder="Escribe..." className="flex-1 bg-white/5 border border-white/10 rounded-full px-4 py-3 text-white text-sm outline-none" /><button onClick={()=>{if(newMsg){setMessages([...messages,{from:"Tú",text:newMsg}]); setNewMsg("")}}} className="w-12 h-12 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full text-white">➤</button></div></div></div>}
-
-      {toast && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-white text-black px-6 py-3 rounded-full font-bold z-[120]">{toast}</div>}
+  return <main className="blynk-shell min-h-screen">
+    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#090914e8] backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6"><button onClick={() => setTab("discover")} className="flex items-center gap-2 text-xl font-black tracking-tight"><span className="grid size-8 place-items-center rounded-xl pink-gradient shadow-[0_0_24px_#ed3fb399]">◉</span><span className="bg-gradient-to-r from-pink-400 to-violet-400 bg-clip-text text-transparent">Blynk</span></button><div className="flex items-center gap-2"><select aria-label="Idioma" value={language} onChange={(event) => setLanguage(event.target.value as Language)} className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none"><option value="es">ES</option><option value="en">EN</option></select><a href="/login" className="hidden rounded-full border border-white/15 px-4 py-2 text-sm font-bold text-white sm:block">{language === "es" ? "Ingresar" : "Sign in"}</a></div></div></header>
+    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-4 pb-24 pt-6 md:px-6 lg:grid-cols-[185px_minmax(0,1fr)_260px]">
+      <aside className="hidden lg:block"><nav className="blynk-card sticky top-24 space-y-1 rounded-3xl p-2">{([ ["discover", "▷"], ["community", "◎"], ["messages", "✉"], ["profile", "◌"] ] as [Tab, string][]).map(([key, icon]) => <button key={key} onClick={() => setTab(key)} className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold ${tab === key ? "bg-white/10 text-pink-300" : "text-white/55 hover:bg-white/5 hover:text-white"}`}><span>{icon}</span>{t[key]}</button>)}</nav></aside>
+      <section className="min-w-0">
+        {tab === "discover" && <div className="mx-auto max-w-md" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}><div className="mb-4 grid grid-cols-2 rounded-2xl bg-white/5 p-1 text-center text-sm font-bold"><button className="rounded-xl bg-white/10 py-3 text-pink-300">{t.forYou}</button><button className="py-3 text-white/45">{t.nearby}</button></div><article className="blynk-card relative aspect-[9/14] overflow-hidden rounded-[2rem]" aria-label={`${person.name}, ${person.age}`}><div className={`absolute inset-0 bg-gradient-to-br ${person.accent}`} /><video key={person.id} className="absolute inset-0 size-full object-cover opacity-55 mix-blend-overlay" src={person.video} autoPlay muted loop playsInline /><div className="video-shade absolute inset-0" /><div className="absolute left-4 right-4 top-4 flex items-center justify-between"><span className="rounded-full border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-semibold backdrop-blur">● {person.place}</span><span className="rounded-full bg-black/30 px-3 py-1.5 text-xs backdrop-blur">00:18</span></div><button onClick={() => notify(language === "es" ? "Perfil guardado" : "Profile saved")} className="soft-button absolute right-4 top-16 grid size-11 place-items-center rounded-full border border-white/15 bg-black/30 text-lg backdrop-blur" aria-label="Guardar">♡</button><div className="absolute inset-x-0 bottom-0 p-6"><span className="mb-3 inline-flex rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-100">● ONLINE</span><h1 className="text-3xl font-black">{person.name}, {person.age}</h1><p className="mt-2 text-sm leading-6 text-white/85">{person.intro}</p><div className="mt-4 flex flex-wrap gap-2">{person.tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs font-semibold">{tag}</span>)}</div></div></article><p className="animate-pulse py-3 text-center text-xs text-white/45">↑ {t.swipe}</p><div className="grid grid-cols-[1fr_1.45fr] gap-3"><button onClick={nextPerson} className="soft-button rounded-2xl border border-white/15 bg-white/5 py-4 font-bold text-white/80">× {t.skip}</button><button onClick={() => { notify(t.matched); nextPerson(); }} className="soft-button pink-gradient rounded-2xl py-4 font-bold shadow-[0_12px_28px_#ef38b755]">♥ {t.request}</button></div></div>}
+        {tab === "community" && <div className="mx-auto max-w-xl space-y-4"><div><p className="text-sm font-semibold text-pink-300">Blynk Community</p><h1 className="mt-1 text-2xl font-black">{t.share}</h1></div><div className="blynk-card rounded-3xl p-4"><textarea value={postText} onChange={(event) => setPostText(event.target.value)} placeholder={t.thought} className="min-h-24 w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/35" /><div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3"><label className="cursor-pointer text-sm font-bold text-white/60">▣ {t.addVideo}<input className="hidden" type="file" accept="video/*" /></label><button onClick={addPost} className="soft-button pink-gradient rounded-xl px-5 py-2.5 text-sm font-bold">{t.publish}</button></div></div>{posts.map((post) => <article key={post.id} className="blynk-card rounded-3xl p-5"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-gradient-to-br from-pink-400 to-violet-600 font-black">{post.initial}</span><div><p className="font-bold">{post.author}</p><p className="text-xs text-white/45">{post.time} · {t.public}</p></div><button onClick={() => setMenu(menu === post.id ? null : post.id)} className="ml-auto rounded-full p-2 text-white/50 hover:bg-white/10">•••</button></div>{menu === post.id && <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/30 p-2 text-xs"><button onClick={() => setPosts((items) => items.map((item) => item.id === post.id ? { ...item, commentsEnabled: !item.commentsEnabled } : item))}>{t.disableComments}</button><button onClick={() => notify(t.report)}>{t.report}</button><button onClick={() => notify(t.block)}>{t.block}</button><button onClick={() => setPosts((items) => items.filter((item) => item.id !== post.id))}>{t.delete}</button></div>}<p className="mt-4 leading-6 text-white/90">{post.text}</p><div className="mt-4 flex gap-5 border-t border-white/10 pt-3 text-sm text-white/55"><button onClick={() => setPosts((items) => items.map((item) => item.id === post.id ? { ...item, likes: item.likes + 1 } : item))}>♡ {post.likes}</button><span>◌ {post.comments.length} {t.comments.toLowerCase()}</span></div>{post.commentsEnabled && <div className="mt-3 space-y-2">{post.comments.map((entry, index) => <button onClick={() => notify(`${t.reply} · ${t.copy} · ${t.hide}`)} className="block w-full rounded-xl bg-white/5 p-3 text-left text-sm text-white/75" key={`${entry}-${index}`}>{entry}</button>)}<div className="flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" placeholder={t.comment} /><button onClick={() => addComment(post.id)} className="rounded-xl bg-white/10 px-3 text-sm font-bold">{t.send}</button></div></div>}</article>)}</div>}
+        {tab === "messages" && <div className="mx-auto flex h-[68dvh] max-w-xl flex-col overflow-hidden rounded-3xl blynk-card"><div className="flex items-center gap-3 border-b border-white/10 p-4"><span className="grid size-10 place-items-center rounded-full bg-gradient-to-br from-orange-400 to-pink-500">S</span><div><p className="font-bold">Sofía</p><p className="text-xs text-emerald-300">● online</p></div><button className="ml-auto text-white/55">⌕</button></div><div className="no-scrollbar flex-1 space-y-3 overflow-y-auto p-4">{chat.map((item, index) => <p key={index} className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm ${item.from === "me" ? "pink-gradient ml-auto" : "bg-white/10"}`}>{item.text}</p>)}</div><form onSubmit={sendMessage} className="flex gap-2 border-t border-white/10 p-3"><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={language === "es" ? "Escribe un mensaje…" : "Write a message…"} className="min-w-0 flex-1 rounded-full bg-white/5 px-4 py-3 text-sm outline-none" /><button className="pink-gradient rounded-full px-5 font-bold">➤</button></form></div>}
+        {tab === "profile" && <div className="mx-auto max-w-xl space-y-4"><section className="blynk-card overflow-hidden rounded-3xl"><div className="h-28 bg-gradient-to-r from-pink-500 via-fuchsia-600 to-violet-700" /><div className="px-5 pb-5"><div className="-mt-12 flex items-end justify-between"><span className="grid size-24 place-items-center rounded-3xl border-4 border-[#151525] bg-gradient-to-br from-amber-300 to-rose-500 text-3xl font-black">L</span><button onClick={() => notify(t.edit)} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold">✎ {t.edit}</button></div><h1 className="mt-3 text-2xl font-black">Luis Hernandez</h1><p className="text-sm text-white/60">Los Angeles · 26 · Español, English</p><p className="mt-3 text-sm leading-6 text-white/80">Diseñando una vida que se sienta auténtica. Me gustan las conversaciones que empiezan sin presión.</p><div className="mt-4 flex gap-5 text-sm"><span><b>12</b> publicaciones</span><span><b>48</b> matches</span><span><b>1.2k</b> vistas</span></div></div></section><section className="blynk-card rounded-3xl p-5"><div className="flex items-center justify-between"><h2 className="font-black">{t.gallery}</h2><label className="soft-button cursor-pointer rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">+ {t.addMedia}<input onChange={uploadMedia} className="hidden" multiple type="file" accept="image/*,video/*" /></label></div><div className="mt-4 grid grid-cols-3 gap-2">{media.map((source) => <img key={source} src={source} alt="Contenido del perfil" className="aspect-square rounded-xl object-cover" />)}{media.length === 0 && <p className="col-span-3 rounded-2xl border border-dashed border-white/15 p-7 text-center text-sm text-white/45">{language === "es" ? "Añade hasta 6 fotos o videos para completar tu perfil." : "Add up to 6 photos or videos to complete your profile."}</p>}</div></section><section className="blynk-card rounded-3xl p-5"><div className="flex items-center justify-between"><h2 className="font-black">{t.settings}</h2><select value={privacy} onChange={(event) => setPrivacy(event.target.value)} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm"><option>{t.public}</option><option>{t.private}</option><option>{t.hidden}</option></select></div><button onClick={() => notify(language === "es" ? "Sesión cerrada en este prototipo" : "Signed out in this prototype")} className="mt-4 text-sm font-bold text-rose-300">↪ {t.logOut}</button></section></div>}
+      </section>
+      <aside className="hidden lg:block"><div className="blynk-card sticky top-24 rounded-3xl p-5"><p className="text-xs font-bold uppercase tracking-widest text-pink-300">Blynk Pro</p><h2 className="mt-2 text-lg font-black">Tu perfil está al 78%</h2><p className="mt-2 text-sm leading-5 text-white/55">Agrega un video de presentación y recibe más conexiones relevantes.</p><button onClick={() => setTab("profile")} className="soft-button mt-4 w-full rounded-xl bg-white/10 py-3 text-sm font-bold">{t.profileReady}</button></div></aside>
     </div>
-  );
+    <nav className="mobile-safe fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-white/10 bg-[#0b0b17ef] px-3 py-2 backdrop-blur-xl lg:hidden">{([ ["discover", "▷"], ["community", "◎"], ["messages", "✉"], ["profile", "◌"] ] as [Tab, string][]).map(([key, icon]) => <button key={key} onClick={() => setTab(key)} className={`grid place-items-center gap-1 px-2 py-1 text-[10px] font-bold ${tab === key ? "text-pink-300" : "text-white/45"}`}><span className="text-xl">{icon}</span>{t[key]}</button>)}</nav>
+    {toast && <div className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#171322] shadow-xl lg:bottom-8">{toast}</div>}
+  </main>;
 }
