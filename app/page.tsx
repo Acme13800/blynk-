@@ -27,7 +27,7 @@ const copy = {
 export default function BlynkHome() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("discover");
-  const [language, setLanguage] = useState<Language>("es");
+  const [language, setLanguage] = useState<Language>("en");
   const [personIndex, setPersonIndex] = useState(0);
   const [toast, setToast] = useState("");
   const [postText, setPostText] = useState("");
