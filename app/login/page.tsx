@@ -19,7 +19,8 @@ export default function LoginPage() {
     if (mode === "signup" && !accepted) { setNotice("Debes aceptar los Términos y la Política de privacidad."); return; }
     if (!isSupabaseConfigured || !supabase) { setNotice("Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local para activar el acceso seguro."); return; }
     setBusy(true); setNotice("");
-    const result = mode === "login" ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password, options: { data: { terms_accepted_at: new Date().toISOString() } } });
+    if (mode === "signup") await supabase.auth.signOut({ scope: "local" });
+    const result = mode === "login" ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/login`, data: { terms_accepted_at: new Date().toISOString() } } });
     setBusy(false);
     if (result.error) { setNotice(result.error.message); return; }
     if (mode === "signup") {
