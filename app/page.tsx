@@ -278,7 +278,8 @@ export default function BlynkHome() {
     async function loadMyProfile() {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return;
-      const { data } = await client.from("profiles").select("display_name, username, bio, avatar_url, cover_url, presentation_video_url").eq("id", user.id).maybeSingle();
+      const { data } = await client.from("profiles").select("display_name, username, bio, avatar_url, cover_url, presentation_video_url, onboarding_completed").eq("id", user.id).maybeSingle();
+      if (!data?.onboarding_completed && !data?.bio) { router.replace("/onboarding"); return; }
       setMyProfile({ displayName: data?.display_name || user.user_metadata.display_name || user.email?.split("@")[0] || "Blynk user", username: data?.username || "", bio: data?.bio || "", email: user.email || "", avatarUrl: data?.avatar_url || "", coverUrl: data?.cover_url || "", presentationVideoUrl: data?.presentation_video_url || "" });
       setPresentationVideo(data?.presentation_video_url || "");
       const { data: gallery } = await client.from("profile_media").select("media_url").eq("user_id", user.id).order("created_at", { ascending: true }).limit(6);
