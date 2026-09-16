@@ -16,15 +16,15 @@ export default function LoginPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (mode === "signup" && !accepted) { setNotice("Debes aceptar los Términos y la Política de privacidad."); return; }
-    if (!isSupabaseConfigured || !supabase) { setNotice("Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local para activar el acceso seguro."); return; }
+    if (mode === "signup" && !accepted) { setNotice("You must accept the Terms and Privacy Policy."); return; }
+    if (!isSupabaseConfigured || !supabase) { setNotice("Add the Supabase environment variables to enable secure access."); return; }
     setBusy(true); setNotice("");
     if (mode === "signup") await supabase.auth.signOut({ scope: "local" });
     const result = mode === "login" ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/login`, data: { terms_accepted_at: new Date().toISOString() } } });
     setBusy(false);
     if (result.error) { setNotice(result.error.message); return; }
     if (mode === "signup") {
-      setNotice("Revisa tu correo para confirmar tu cuenta.");
+      setNotice("Check your email to confirm your account.");
       return;
     }
     router.replace("/");
