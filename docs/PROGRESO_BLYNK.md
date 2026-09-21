@@ -1,22 +1,25 @@
 # Progreso de Blynk
 
-Última actualización: 15 de septiembre de 2026.
+Última actualización: 21 de septiembre de 2026.
 
-## Ya implementado
+## Implementado y funcional
 
-- Registro e inicio de sesión con Supabase Auth.
-- Perfiles con foto, galería, video de presentación y foto de fondo.
-- Descubrir perfiles con video o foto si no existe video.
-- Solicitudes de match, aceptación/rechazo y prevención de solicitudes duplicadas.
-- Mensajes visibles cuando existe un mensaje recibido de un match.
-- Comunidad con publicaciones, video, likes y comentarios.
-- Idioma inglés como predeterminado; selector ES/EN en la app.
-- Logo del ojo Blynk en la barra y en la pantalla de acceso.
-- Onboarding original para cuentas nuevas: nombre, usuario, fecha de nacimiento, ciudad, pronombres, intención, intereses y biografía.
+- Registro e inicio de sesión con Supabase Auth y confirmación de correo configurada para localhost y producción.
+- Onboarding propio para cuentas nuevas: nombre, usuario, fecha de nacimiento (18+), ciudad, pronombres, intención, intereses y biografía.
+- Perfil editable por cuenta: nombre, usuario, ciudad, intención, intereses, biografía, foto de perfil, foto de fondo, galería y video de presentación.
+- Descubrir perfiles con video de presentación o foto si no existe video.
+- Likes reales por perfil con contador y opción de quitar el like.
+- Filtros de Descubrir por ciudad, edad, intención e intereses. La pestaña Cerca usa la ciudad del perfil y no muestra ubicación exacta.
+- Solicitudes de match, aceptación/rechazo, revisión de perfil y prevención de matches duplicados.
+- Mensajes entre matches, bandeja profesional, hora, indicador de leído/no leído y conversaciones visibles al recibir el primer mensaje.
+- Comunidad: publicaciones con video, likes, comentarios, respuestas y menú por comentario para copiar, ocultar, borrar, reportar y bloquear.
+- Comentarios activables o desactivables por publicación.
+- Idioma inglés como predeterminado y selector ES/EN.
+- Logo del ojo Blynk en la barra y acceso.
 
 ## Migraciones de Supabase
 
-Ejecutar una sola vez, en orden, desde `supabase/migrations/`:
+Los archivos están en `supabase/migrations/`. Cada uno se ejecuta una sola vez en Supabase SQL Editor:
 
 1. `002_blynk_media_storage.sql`
 2. `003_posts_permissions.sql`
@@ -28,35 +31,36 @@ Ejecutar una sola vez, en orden, desde `supabase/migrations/`:
 8. `009_messages_match_policy.sql`
 9. `010_profile_cover_and_discovery.sql`
 10. `011_profile_onboarding.sql`
+11. `012_message_read_receipts.sql`
+12. `013_comment_moderation.sql`
 
-## Configuración de producción
+## Producción
 
-En Supabase, Authentication > URL Configuration:
-
-- Site URL: `https://blynk-beta.vercel.app`
-- Redirect URLs:
+- Producción: `https://blynk-beta.vercel.app`
+- En Vercel deben existir `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` en Production.
+- En Supabase, Authentication > URL Configuration debe incluir:
   - `https://blynk-beta.vercel.app/**`
   - `http://localhost:3000/**`
   - `https://*-acme-1232.vercel.app/**`
 
-En Vercel deben existir `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` para Production. Cada cambio de variables requiere redeploy.
-
 ## Próximos pasos recomendados
 
-- Completar las traducciones ES/EN restantes con un diccionario único.
-- Hacer que el filtro Cerca use ciudad y rango configurados por cada perfil.
-- Conectar el corazón de Descubrir a `profile_likes` y mostrar el contador real.
-- Añadir edición de todos los datos del onboarding desde Perfil.
-- Configurar SMTP propio para entrega confiable de correos de confirmación.
+1. Eliminar cuenta y datos personales con confirmación segura.
+2. Compartir fotos y videos cortos dentro de los mensajes.
+3. Notificaciones en tiempo real para matches, mensajes y actividad de Comunidad.
+4. Vista previa pública del perfil y controles de visibilidad individuales por foto/video.
+5. Páginas legales: Privacidad, Términos y Normas de Comunidad.
+6. Límites, compresión y validación de archivos para prevenir abuso.
+7. Pruebas con varias cuentas antes de invitar usuarios reales.
 
-## Publicar cambios
+## Cómo guardar cambios futuros
 
-Desde `C:\Users\herna\blynk`:
+Desde `C:\Users\herna\blynk`, agrega solo los archivos modificados. Por ejemplo:
 
 ```powershell
-git add app/login/page.tsx docs/PROGRESO_BLYNK.md
-git commit -m "Guarda progreso y aviso en ingles"
-git push origin main
+git add app/page.tsx docs/PROGRESO_BLYNK.md
+git commit -m "Save Blynk progress"
+git push
 ```
 
-No agregar `.npm-cache`.
+No usar `git add .` y no agregar `.npm-cache`.
