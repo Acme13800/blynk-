@@ -6,9 +6,10 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type Tab = "discover" | "community" | "messages" | "profile";
 type Language = "es" | "en";
-type CommunityPost = { id: string | number; author: string; initial: string; time: string; text: string; video?: string; likes: number; commentsEnabled: boolean; comments: string[] };
-type StoredPost = { id: string; caption: string | null; video_url: string | null; created_at: string; profiles: { display_name: string }[] | null };
-type StoredComment = { post_id: string; content: string };
+type CommunityComment = { id: string | number; content: string; author: string; authorId?: string; createdAt?: string; parentId?: string | null; hidden?: boolean };
+type CommunityPost = { id: string | number; author: string; authorId?: string; initial: string; time: string; text: string; video?: string; likes: number; commentsEnabled: boolean; comments: CommunityComment[] };
+type StoredPost = { id: string; user_id: string; caption: string | null; video_url: string | null; comments_enabled?: boolean | null; created_at: string; profiles: { display_name: string }[] | null };
+type StoredComment = { id: string; post_id: string; user_id: string; content: string; created_at: string; parent_id?: string | null; hidden_at?: string | null; profiles: { display_name: string }[] | null };
 type StoredLike = { post_id: string };
 type ChatMessage = { from: string; text: string; createdAt: string };
 type InboxPreview = { content: string; createdAt: string; unread: boolean };
@@ -33,12 +34,14 @@ export default function BlynkHome() {
   const [personIndex, setPersonIndex] = useState(0);
   const [toast, setToast] = useState("");
   const [postText, setPostText] = useState("");
-  const [posts, setPosts] = useState<CommunityPost[]>([{ id: 1, author: "Luis Hernandez", initial: "L", time: "Ahora", text: "Busco una conversación honesta. ¿Cuál es el mejor consejo que te han dado?", likes: 4, commentsEnabled: true, comments: ["Me encanta esa pregunta ✨"] }]);
+  const [posts, setPosts] = useState<CommunityPost[]>([{ id: 1, author: "Luis Hernandez", initial: "L", time: "Ahora", text: "Busco una conversación honesta. ¿Cuál es el mejor consejo que te han dado?", likes: 4, commentsEnabled: true, comments: [{ id: "welcome-comment", content: "Me encanta esa pregunta ✨", author: "Blynk member" }] }]);
   const [postVideo, setPostVideo] = useState("");
   const [postVideoFile, setPostVideoFile] = useState<File | null>(null);
   const [uploadingPost, setUploadingPost] = useState(false);
   const [comment, setComment] = useState("");
   const [menu, setMenu] = useState<string | number | null>(null);
+  const [commentMenu, setCommentMenu] = useState<string | number | null>(null);
+  const [replyTo, setReplyTo] = useState<{ postId: string | number; commentId: string | number; author: string } | null>(null);
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState("");
   const [media, setMedia] = useState<string[]>([]);
@@ -105,7 +108,7 @@ export default function BlynkHome() {
       const { error: postError } = await supabase.from("posts").insert({ user_id: user.id, caption: postText.trim() || null, video_url: publishedVideo });
       if (postError) { setUploadingPost(false); notify(`${language === "es" ? "Video subido, pero no se pudo guardar la publicación" : "Video uploaded, but the post could not be saved"}: ${postError.message}`); return; }
     }
-    setPosts((items) => [{ id: Date.now(), author: "Luis Hernandez", initial: "L", time: "Ahora", text: postText.trim(), video: publishedVideo || undefined, likes: 0, commentsEnabled: true, comments: [] }, ...items]);
+    setPosts((items) => [{ id: Date.now(), author: myProfile.displayName || "Blynk user", initial: (myProfile.displayName || "B").slice(0, 1).toUpperCase(), time: language === "es" ? "Ahora" : "Now", text: postText.trim(), video: publishedVideo || undefined, likes: 0, commentsEnabled: true, comments: [] }, ...items]);
     setPostText(""); setPostVideo(""); setPostVideoFile(null); setUploadingPost(false);
     notify(language === "es" ? "Publicación compartida" : "Post shared");
   };
@@ -115,11 +118,35 @@ export default function BlynkHome() {
     if (isSupabaseConfigured && supabase && typeof postId === "string") {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { notify(language === "es" ? "Inicia sesión para comentar." : "Sign in to comment."); return; }
-      const { error } = await supabase.from("comments").insert({ post_id: postId, user_id: user.id, content });
+      const { error } = await supabase.from("comments").insert({ post_id: postId, user_id: user.id, content, parent_id: replyTo?.postId === postId && typeof replyTo.commentId === "string" ? replyTo.commentId : null });
       if (error) { notify(`${language === "es" ? "No se pudo publicar el comentario" : "Could not post the comment"}: ${error.message}`); return; }
     }
-    setPosts((items) => items.map((post) => post.id === postId ? { ...post, comments: [...post.comments, content] } : post));
-    setComment("");
+    setPosts((items) => items.map((post) => post.id === postId ? { ...post, comments: [...post.comments, { id: Date.now(), content, author: myProfile.displayName || "You", parentId: replyTo?.postId === postId ? String(replyTo.commentId) : null }] } : post));
+    setComment(""); setReplyTo(null);
+  };
+  const updateCommentsEnabled = async (post: CommunityPost) => {
+    const nextEnabled = !post.commentsEnabled;
+    if (supabase && typeof post.id === "string") {
+      const { error } = await supabase.from("posts").update({ comments_enabled: nextEnabled }).eq("id", post.id);
+      if (error) { notify(error.message); return; }
+    }
+    setPosts((items) => items.map((item) => item.id === post.id ? { ...item, commentsEnabled: nextEnabled } : item)); setMenu(null);
+    notify(nextEnabled ? (language === "es" ? "Comentarios activados" : "Comments enabled") : (language === "es" ? "Comentarios desactivados" : "Comments disabled"));
+  };
+  const runCommentAction = async (post: CommunityPost, entry: CommunityComment, action: "reply" | "copy" | "hide" | "delete" | "report" | "block") => {
+    if (action === "reply") { setReplyTo({ postId: post.id, commentId: entry.id, author: entry.author }); setComment(`@${entry.author} `); setCommentMenu(null); return; }
+    if (action === "copy") { try { await navigator.clipboard.writeText(entry.content); notify(language === "es" ? "Comentario copiado" : "Comment copied"); } catch { notify(language === "es" ? "No se pudo copiar el comentario" : "Could not copy the comment"); } setCommentMenu(null); return; }
+    if (!supabase || typeof entry.id !== "string") { notify(language === "es" ? "Esta acción estará disponible en publicaciones guardadas." : "This action is available on saved posts."); setCommentMenu(null); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { notify(language === "es" ? "Inicia sesión para administrar comentarios." : "Sign in to manage comments."); return; }
+    let error: { message: string } | null = null;
+    if (action === "delete") ({ error } = await supabase.from("comments").delete().eq("id", entry.id));
+    if (action === "hide") ({ error } = await supabase.from("comments").update({ hidden_at: new Date().toISOString(), hidden_by: user.id }).eq("id", entry.id));
+    if (action === "report") ({ error } = await supabase.from("comment_reports").upsert({ comment_id: entry.id, reporter_id: user.id, reason: "User report" }, { onConflict: "comment_id,reporter_id" }));
+    if (action === "block" && entry.authorId) ({ error } = await supabase.from("blocks").upsert({ blocker_id: user.id, blocked_id: entry.authorId }, { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true }));
+    if (error) { notify(error.message); return; }
+    if (action === "delete" || action === "hide") setPosts((items) => items.map((item) => item.id === post.id ? { ...item, comments: item.comments.filter((commentItem) => commentItem.id !== entry.id) } : item));
+    notify(action === "delete" ? (language === "es" ? "Comentario eliminado" : "Comment deleted") : action === "hide" ? (language === "es" ? "Comentario oculto" : "Comment hidden") : action === "report" ? (language === "es" ? "Comentario reportado" : "Comment reported") : (language === "es" ? "Usuario bloqueado" : "User blocked")); setCommentMenu(null);
   };
   const addLike = async (postId: string | number) => {
     if (isSupabaseConfigured && supabase && typeof postId === "string") {
@@ -334,17 +361,17 @@ export default function BlynkHome() {
     if (!isSupabaseConfigured || !supabase) return;
     const client = supabase;
     async function loadCommunity() {
-      const { data, error } = await client.from("posts").select("id, caption, video_url, created_at, profiles(display_name)").order("created_at", { ascending: false }).limit(30);
+      const { data, error } = await client.from("posts").select("id, user_id, caption, video_url, comments_enabled, created_at, profiles(display_name)").order("created_at", { ascending: false }).limit(30);
       if (error || !data?.length) return;
       const storedPosts = data as unknown as StoredPost[];
       const postIds = storedPosts.map((post) => post.id);
       const [{ data: likes }, { data: comments }] = await Promise.all([
         client.from("likes").select("post_id").in("post_id", postIds),
-        client.from("comments").select("post_id, content").in("post_id", postIds).order("created_at", { ascending: true }),
+        client.from("comments").select("id, post_id, user_id, content, created_at, parent_id, hidden_at, profiles(display_name)").in("post_id", postIds).order("created_at", { ascending: true }),
       ]);
       const likesByPost = (likes as unknown as StoredLike[] | null)?.reduce<Record<string, number>>((total, like) => ({ ...total, [like.post_id]: (total[like.post_id] || 0) + 1 }), {}) || {};
-      const commentsByPost = (comments as unknown as StoredComment[] | null)?.reduce<Record<string, string[]>>((total, entry) => ({ ...total, [entry.post_id]: [...(total[entry.post_id] || []), entry.content] }), {}) || {};
-      setPosts(storedPosts.map((post) => { const displayName = post.profiles?.[0]?.display_name || "Blynk user"; return { id: post.id, author: displayName, initial: displayName.slice(0, 1).toUpperCase(), time: new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { dateStyle: "medium" }).format(new Date(post.created_at)), text: post.caption || "", video: post.video_url || undefined, likes: likesByPost[post.id] || 0, commentsEnabled: true, comments: commentsByPost[post.id] || [] }; }));
+      const commentsByPost = (comments as unknown as StoredComment[] | null)?.reduce<Record<string, CommunityComment[]>>((total, entry) => ({ ...total, [entry.post_id]: [...(total[entry.post_id] || []), { id: entry.id, content: entry.content, author: entry.profiles?.[0]?.display_name || "Blynk user", authorId: entry.user_id, createdAt: entry.created_at, parentId: entry.parent_id, hidden: Boolean(entry.hidden_at) }] }), {}) || {};
+      setPosts(storedPosts.map((post) => { const displayName = post.profiles?.[0]?.display_name || "Blynk user"; return { id: post.id, author: displayName, authorId: post.user_id, initial: displayName.slice(0, 1).toUpperCase(), time: new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { dateStyle: "medium" }).format(new Date(post.created_at)), text: post.caption || "", video: post.video_url || undefined, likes: likesByPost[post.id] || 0, commentsEnabled: post.comments_enabled !== false, comments: (commentsByPost[post.id] || []).filter((entry) => !entry.hidden) }; }));
     }
     void loadCommunity();
   }, [language]);
@@ -364,10 +391,10 @@ export default function BlynkHome() {
           </div>
           {posts.map((post) => <article key={post.id} className="blynk-card rounded-3xl p-5">
             <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-gradient-to-br from-pink-400 to-violet-600 font-black">{post.initial}</span><div><p className="font-bold">{post.author}</p><p className="text-xs text-white/45">{post.time} · {t.public}</p></div><button onClick={() => setMenu(menu === post.id ? null : post.id)} className="ml-auto rounded-full p-2 text-white/50 hover:bg-white/10">•••</button></div>
-            {menu === post.id && <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/30 p-2 text-xs"><button onClick={() => setPosts((items) => items.map((item) => item.id === post.id ? { ...item, commentsEnabled: !item.commentsEnabled } : item))}>{t.disableComments}</button><button onClick={() => notify(t.report)}>{t.report}</button><button onClick={() => notify(t.block)}>{t.block}</button><button onClick={() => setPosts((items) => items.filter((item) => item.id !== post.id))}>{t.delete}</button></div>}
+            {menu === post.id && <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/40 p-2 text-xs shadow-xl"><button onClick={() => void updateCommentsEnabled(post)} className="rounded-xl bg-white/5 px-3 py-2 text-left hover:bg-white/10">{post.commentsEnabled ? t.disableComments : (language === "es" ? "Activar comentarios" : "Enable comments")}</button><button onClick={() => { notify(language === "es" ? "Selecciona un comentario para reportarlo." : "Select a comment to report it."); setMenu(null); }} className="rounded-xl bg-white/5 px-3 py-2 text-left hover:bg-white/10">{t.report}</button><button onClick={() => { notify(language === "es" ? "Selecciona un comentario para bloquear a esa persona." : "Select a comment to block that person."); setMenu(null); }} className="rounded-xl bg-white/5 px-3 py-2 text-left hover:bg-white/10">{t.block}</button>{post.authorId && <button onClick={() => setPosts((items) => items.filter((item) => item.id !== post.id))} className="rounded-xl bg-rose-400/10 px-3 py-2 text-left text-rose-200 hover:bg-rose-400/20">{t.delete}</button>}</div>}
             {post.text && <p className="mt-4 leading-6 text-white/90">{post.text}</p>}{post.video && <video src={post.video} className="mt-4 w-full rounded-2xl bg-black" controls autoPlay muted loop playsInline />}
             <div className="mt-4 flex gap-5 border-t border-white/10 pt-3 text-sm text-white/55"><button onClick={() => addLike(post.id)}>♡ {post.likes}</button><span>◌ {post.comments.length} {t.comments.toLowerCase()}</span></div>
-            {post.commentsEnabled && <div className="mt-3 space-y-2">{post.comments.map((entry, index) => <button onClick={() => notify(`${t.reply} · ${t.copy} · ${t.hide}`)} className="block w-full rounded-xl bg-white/5 p-3 text-left text-sm text-white/75" key={`${entry}-${index}`}>{entry}</button>)}<div className="flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none" placeholder={t.comment} /><button onClick={() => addComment(post.id)} className="rounded-xl bg-white/10 px-3 text-sm font-bold">{t.send}</button></div></div>}
+            {post.commentsEnabled && <div className="mt-3 space-y-2">{post.comments.map((entry) => <div className="rounded-2xl bg-white/5 p-3 text-sm text-white/75" key={entry.id}><div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="font-bold text-white/90">{entry.author}{entry.parentId && <span className="ml-2 text-xs font-normal text-pink-200">↳ {language === "es" ? "respuesta" : "reply"}</span>}</p><p className="mt-1 break-words">{entry.content}</p></div><button onClick={() => setCommentMenu(commentMenu === entry.id ? null : entry.id)} aria-label={language === "es" ? "Opciones del comentario" : "Comment options"} className="rounded-lg px-2 py-1 text-white/50 hover:bg-white/10">•••</button></div>{commentMenu === entry.id && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-3 text-xs"><button onClick={() => void runCommentAction(post, entry, "reply")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">↩ {t.reply}</button><button onClick={() => void runCommentAction(post, entry, "copy")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">⧉ {t.copy}</button><button onClick={() => void runCommentAction(post, entry, "hide")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">◉ {t.hide}</button><button onClick={() => void runCommentAction(post, entry, "report")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">⚑ {t.report}</button><button onClick={() => void runCommentAction(post, entry, "block")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">⊘ {t.block}</button><button onClick={() => void runCommentAction(post, entry, "delete")} className="rounded-lg bg-rose-400/10 px-2 py-2 text-left text-rose-200 hover:bg-rose-400/20">× {t.delete}</button></div>}</div>)}<div className="rounded-2xl border border-white/10 bg-black/15 p-2"><div className="flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} className="min-w-0 flex-1 rounded-xl bg-transparent px-3 py-2 text-sm outline-none" placeholder={replyTo?.postId === post.id ? `${t.reply} ${replyTo.author}…` : t.comment} /><button onClick={() => void addComment(post.id)} className="rounded-xl bg-white/10 px-3 text-sm font-bold hover:bg-white/15">{t.send}</button></div>{replyTo?.postId === post.id && <button onClick={() => { setReplyTo(null); setComment(""); }} className="px-3 py-1 text-xs text-pink-200">× {language === "es" ? `Responder a ${replyTo.author}` : `Replying to ${replyTo.author}`}</button>}</div></div>}
           </article>)}
         </div>}
         {tab === "messages" && (activeMatch && hasReceivedMessage ? <div className="mx-auto flex h-[68dvh] max-w-xl flex-col overflow-hidden rounded-3xl blynk-card"><div className="flex items-center gap-3 border-b border-white/10 p-4"><span className="grid size-10 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-orange-400 to-pink-500 font-bold">{activeMatch.otherAvatarUrl ? <img src={activeMatch.otherAvatarUrl} alt="" className="size-full object-cover" /> : conversationName.slice(0, 1).toUpperCase()}</span><div><p className="font-bold">{conversationName}</p><p className="text-xs text-emerald-300">● {language === "es" ? "match confirmado" : "confirmed match"}</p></div><button onClick={() => setActiveMatch(null)} className="ml-auto text-xs text-white/55">{language === "es" ? "Cerrar" : "Close"}</button></div><div className="no-scrollbar flex-1 space-y-3 overflow-y-auto p-4">{chat.map((item, index) => <div key={index} className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm ${item.from === "me" ? "pink-gradient ml-auto" : "bg-white/10"}`}><p>{item.text}</p><time className="mt-1 block text-[10px] opacity-65">{messageTime(item.createdAt)}</time></div>)}</div><form onSubmit={sendMessage} className="flex gap-2 border-t border-white/10 p-3"><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={language === "es" ? `Mensaje para ${conversationName}…` : `Message ${conversationName}…`} className="min-w-0 flex-1 rounded-full bg-white/5 px-4 py-3 text-sm outline-none" /><button className="pink-gradient rounded-full px-5 font-bold">➤</button></form></div> : inboxMatchIds.length ? <div className="mx-auto max-w-xl space-y-3 py-8"><div className="flex items-center justify-between px-1"><h2 className="text-xl font-black">{language === "es" ? "Mensajes" : "Messages"}</h2><span className="rounded-full bg-pink-400/15 px-3 py-1 text-xs font-bold text-pink-200">{inboxMatchIds.length} {language === "es" ? "nuevos" : "new"}</span></div>{matchRequests.filter((request) => inboxMatchIds.includes(request.otherId)).map((request) => { const preview = inboxPreviews[request.otherId]; return <button key={request.id} onClick={() => void openConversation(request)} className="blynk-card flex w-full items-center gap-3 rounded-2xl p-4 text-left transition hover:border-pink-300/40"><span className="relative grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-orange-400 to-pink-500 font-bold">{request.otherAvatarUrl ? <img src={request.otherAvatarUrl} alt="" className="size-full object-cover" /> : request.otherName.slice(0, 1).toUpperCase()}{preview?.unread && <i className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-[#151525] bg-pink-400" />}</span><span className="min-w-0 flex-1"><b className="block truncate">{request.otherName}</b><small className={`block truncate ${preview?.unread ? "font-bold text-white/85" : "text-white/50"}`}>{preview?.content || (language === "es" ? "Te envió un mensaje" : "Sent you a message")}</small></span><time className="self-start text-[11px] text-white/45">{preview ? messageTime(preview.createdAt) : ""}</time></button>; })}</div> : <div className="mx-auto max-w-xl py-20 text-center"><span className="mx-auto grid size-14 place-items-center rounded-2xl bg-pink-400/10 text-2xl text-pink-200">✉</span><h2 className="mt-5 text-xl font-black">{language === "es" ? "Aún no tienes mensajes" : "No messages yet"}</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-white/55">{language === "es" ? "Las conversaciones aparecerán aquí cuando uno de tus matches te escriba primero." : "Conversations will appear here when one of your matches messages you first."}</p></div>)}
