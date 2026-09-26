@@ -13,12 +13,14 @@ button { cursor: pointer; }
 .soft-button { transition: transform .18s ease, filter .18s ease; }
 .soft-button:hover { filter: brightness(1.1); transform: translateY(-1px); }
 .soft-button:active { transform: translateY(0) scale(.98); }
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { width: 10px; }
+.no-scrollbar::-webkit-scrollbar-track { background: #090914; border-radius: 99px; }
+.no-scrollbar::-webkit-scrollbar-thumb { background: linear-gradient(#ff4faf, #b247ed); border: 2px solid #090914; border-radius: 99px; }
+.no-scrollbar { scrollbar-width: auto; scrollbar-color: #f13ab5 #090914; }
 .video-shade { background: linear-gradient(180deg, #09091455 5%, transparent 35%, #090914e8 100%); }
-.blynk-message-receipt { display: inline-block; margin-left: .42rem; font-size: .72rem; font-weight: 900; letter-spacing: -.18rem; vertical-align: baseline; }
-.blynk-message-receipt.is-delivered { color: #ff5d66; text-shadow: 0 0 9px #ff5d6688; }
-.blynk-message-receipt.is-read { color: #38e28f; text-shadow: 0 0 9px #38e28f88; }
+.blynk-message-receipt { display: inline-block; margin-left: .5rem; font-size: 1rem; font-weight: 900; letter-spacing: -.12rem; line-height: 1; vertical-align: -1px; }
+.blynk-message-receipt.is-delivered { color: #ff273b; text-shadow: 0 0 12px #ff273bee; }
+.blynk-message-receipt.is-read { color: #19e67b; text-shadow: 0 0 12px #19e67bee; }
 @keyframes blynk-eye-blink { 0%, 82%, 100% { transform: scaleY(1); } 88%, 94% { transform: scaleY(.12); } }
 button[class*="z-[70]"] > span:first-child { position: relative; overflow: hidden; font-size: 0 !important; background: transparent !important; }
 button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; height: 19px; border-radius: 60% 12%; background: radial-gradient(circle at 50% 50%, #071726 0 19%, #39d9dc 21% 37%, #fff7fd 39% 64%, #f13ab5 66% 100%); transform: rotate(45deg); box-shadow: 0 0 16px #f13ab5; animation: blynk-eye-blink 2.3s ease-in-out infinite; }

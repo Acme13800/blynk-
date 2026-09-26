@@ -236,12 +236,7 @@ export default function BlynkHome() {
     const loadedMessages = (data || []).map((item) => ({ id: item.id, from: item.sender_id === user.id ? "me" : request.otherName, text: item.content || "", mediaUrl: item.media_url || undefined, mediaType: item.media_type || undefined, createdAt: item.created_at, readAt: item.read_at }));
     await supabase.from("messages").update({ read_at: new Date().toISOString() }).eq("sender_id", request.otherId).eq("receiver_id", user.id).is("read_at", null);
     setChat(loadedMessages);
-    if (loadedMessages.some((item) => item.from !== "me")) {
-      setActiveMatch(request);
-    } else {
-      setActiveMatch(null);
-      notify(language === "es" ? "La conversación aparecerá cuando tu match te envíe un mensaje." : "The conversation will appear when your match sends you a message.");
-    }
+    setActiveMatch(request);
   };
   const selectPresentationVideo = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -453,6 +448,30 @@ export default function BlynkHome() {
       if (!previous) time?.after(receipt);
     });
   }, [chat, language, tab]);
+  useEffect(() => {
+    if (tab !== "messages" || !activeMatch) return;
+    const history = document.querySelector<HTMLElement>(".no-scrollbar");
+    if (history) history.scrollTo({ top: history.scrollHeight, behavior: "smooth" });
+  }, [chat, tab, activeMatch]);
+  useEffect(() => {
+    const client = supabase;
+    const match = activeMatch;
+    if (!client || !match) return;
+    const supabaseClient = client;
+    const activeConversation = match;
+    let cancelled = false;
+    async function refreshReadReceipts() {
+      const { data: { user } } = await supabaseClient.auth.getUser();
+      if (!user || cancelled) return;
+      const { data } = await supabaseClient.from("messages").select("id, read_at").eq("sender_id", user.id).eq("receiver_id", activeConversation.otherId).not("read_at", "is", null);
+      if (!data || cancelled) return;
+      const readById = new Map(data.map((item) => [item.id, item.read_at]));
+      setChat((items) => items.map((item) => readById.has(item.id) ? { ...item, readAt: readById.get(item.id) || item.readAt } : item));
+    }
+    void refreshReadReceipts();
+    const interval = window.setInterval(() => void refreshReadReceipts(), 4000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [activeMatch]);
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     const client = supabase;
