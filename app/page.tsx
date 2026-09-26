@@ -402,6 +402,29 @@ export default function BlynkHome() {
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     const client = supabase;
+    let channel: ReturnType<typeof client.channel> | null = null;
+    async function connectRealtime() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      channel = client.channel(`blynk-live-${user.id}`)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `receiver_id=eq.${user.id}` }, (payload) => {
+          const messageRow = payload.new as { content?: string | null; media_type?: string | null };
+          notify(messageRow.media_type ? (language === "es" ? "Recibiste una foto o video nuevo." : "You received a new photo or video.") : (language === "es" ? "Tienes un mensaje nuevo." : "You have a new message."));
+          void loadMatches();
+        })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "match_requests", filter: `recipient_id=eq.${user.id}` }, () => {
+          notify(language === "es" ? "Tienes una nueva solicitud de match." : "You have a new match request.");
+          void loadMatches();
+        })
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "match_requests", filter: `recipient_id=eq.${user.id}` }, () => { void loadMatches(); })
+        .subscribe();
+    }
+    void connectRealtime();
+    return () => { if (channel) void client.removeChannel(channel); };
+  }, [language]);
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const client = supabase;
     async function loadCommunity() {
       const { data, error } = await client.from("posts").select("id, user_id, caption, video_url, comments_enabled, created_at, profiles(display_name)").order("created_at", { ascending: false }).limit(30);
       if (error || !data?.length) return;
