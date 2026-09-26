@@ -81,7 +81,6 @@ export default function BlynkHome() {
   const person = discoverPeople[personIndex % discoverPeople.length];
   const conversationName = activeMatch?.otherName || (language === "es" ? "Selecciona un match" : "Select a match");
   const hasReceivedMessage = chat.some((item) => item.from !== "me");
-  const latestSentMessage = [...chat].reverse().find((item) => item.from === "me");
 
   const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
   const messageTime = (date: string) => new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(date));
@@ -181,8 +180,9 @@ export default function BlynkHome() {
     const { data: profileRows } = await supabase.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url").in("id", otherIds);
     const profileById = new Map((profileRows || []).map((profile) => [profile.id, profile]));
     const parsedRequests = data.map((request) => { const otherId = request.sender_id === user.id ? request.recipient_id : request.sender_id; const profile = profileById.get(otherId); return { id: request.id, otherId, otherName: profile?.display_name || "Blynk user", otherBio: profile?.bio || "", otherAvatarUrl: profile?.avatar_url || "", otherVideoUrl: profile?.presentation_video_url || "", incoming: request.recipient_id === user.id, status: request.status as MatchRequest["status"] }; });
-    setMatchRequests(parsedRequests);
-    const acceptedIds = parsedRequests.filter((request) => request.status === "accepted").map((request) => request.otherId);
+    const uniqueRequests = Array.from(parsedRequests.reduce((items, request) => { const current = items.get(request.otherId); const score = (value: MatchRequest) => value.status === "accepted" ? 3 : value.status === "pending" ? 2 : 1; if (!current || score(request) > score(current)) items.set(request.otherId, request); return items; }, new Map<string, MatchRequest>()).values());
+    setMatchRequests(uniqueRequests);
+    const acceptedIds = uniqueRequests.filter((request) => request.status === "accepted").map((request) => request.otherId);
     if (!acceptedIds.length) { setInboxMatchIds([]); setInboxPreviews({}); return; }
     const { data: inboxRows } = await supabase.from("messages").select("sender_id, content, created_at, read_at").eq("receiver_id", user.id).in("sender_id", acceptedIds).order("created_at", { ascending: false });
     const previewById: Record<string, InboxPreview> = {};
@@ -437,6 +437,23 @@ export default function BlynkHome() {
     return () => { if (channel) void client.removeChannel(channel); };
   }, [language, activeMatch?.otherId]);
   useEffect(() => {
+    const sentMessages = chat.filter((item) => item.from === "me");
+    const bubbles = Array.from(document.querySelectorAll<HTMLDivElement>("div.pink-gradient.ml-auto"));
+    bubbles.forEach((bubble, index) => {
+      const message = sentMessages[index];
+      const previous = bubble.querySelector("[data-blynk-receipt]");
+      if (!message) { previous?.remove(); return; }
+      const receipt = (previous as HTMLSpanElement | null) || document.createElement("span");
+      receipt.dataset.blynkReceipt = "true";
+      receipt.className = `blynk-message-receipt ${message.readAt ? "is-read" : "is-delivered"}`;
+      receipt.textContent = message.readAt ? "◉◉" : "◉◉";
+      receipt.setAttribute("aria-label", message.readAt ? (language === "es" ? "Leído" : "Read") : (language === "es" ? "Entregado" : "Delivered"));
+      const time = bubble.querySelector("time");
+      if (time) time.style.display = "inline";
+      if (!previous) time?.after(receipt);
+    });
+  }, [chat, language, tab]);
+  useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     const client = supabase;
     async function loadCommunity() {
@@ -488,7 +505,6 @@ export default function BlynkHome() {
     </div>
     <nav className="mobile-safe fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-white/10 bg-[#0b0b17ef] px-3 py-2 backdrop-blur-xl lg:hidden">{([ ["discover", "▷"], ["community", "◎"], ["messages", "✉"], ["profile", "◌"] ] as [Tab, string][]).map(([key, icon]) => <button key={key} onClick={() => setTab(key)} className={`grid place-items-center gap-1 px-2 py-1 text-[10px] font-bold ${tab === key ? "text-pink-300" : "text-white/45"}`}><span className="text-xl">{icon}</span>{t[key]}</button>)}</nav>
     {incomingAlert && <button onClick={() => { setTab("messages"); setIncomingAlert(null); }} className="fixed left-1/2 top-20 z-[70] flex w-[min(92vw,380px)] -translate-x-1/2 items-center gap-3 rounded-2xl border border-pink-300/35 bg-[#19162af5] p-3 text-left shadow-[0_16px_50px_#000a] backdrop-blur-xl"><span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-400 to-violet-500 text-xl shadow-[0_0_20px_#f13ab599]">◉</span><span className="min-w-0"><b className="block text-sm text-pink-100">Blynk · {incomingAlert.name}</b><small className="mt-0.5 block truncate text-white/65">{incomingAlert.hasMedia ? (language === "es" ? "Te envió una foto o video" : "Sent you a photo or video") : (language === "es" ? "Te envió un mensaje" : "Sent you a message")}</small></span><span className="ml-auto text-xs text-pink-200">›</span></button>}
-    {tab === "messages" && activeMatch && latestSentMessage && <div className="fixed bottom-20 left-1/2 z-40 -translate-x-1/2 rounded-full border border-white/10 bg-[#171526ee] px-3 py-1.5 text-[11px] font-bold text-white/70 shadow-xl backdrop-blur lg:bottom-7"><span className={latestSentMessage.readAt ? "text-cyan-200" : "text-pink-200"}>{latestSentMessage.readAt ? "◉◉" : "◉"}</span> {latestSentMessage.readAt ? (language === "es" ? "Visto" : "Seen") : (language === "es" ? "Entregado" : "Delivered")}</div>}
     {toast && <div className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#171322] shadow-xl lg:bottom-8">{toast}</div>}
     {tab === "profile" && <button onClick={() => setPreviewingOwnProfile(true)} className="fixed right-4 top-32 z-40 rounded-full border border-pink-300/30 bg-[#1b1a2b]/95 px-4 py-2 text-xs font-black text-pink-200 shadow-xl backdrop-blur">◉ {language === "es" ? "Vista pública" : "Public view"}</button>}
     {matchRequests.some((request) => request.incoming && request.status === "pending") && <aside className="fixed bottom-20 right-4 z-40 w-72 rounded-3xl border border-white/15 bg-[#151525f5] p-4 shadow-2xl backdrop-blur-xl sm:bottom-6"><div className="flex items-center justify-between"><p className="text-sm font-black text-pink-300">{language === "es" ? "Solicitudes" : "Requests"}</p><button onClick={() => void loadMatches()} className="text-xs text-white/50">↻</button></div><div className="mt-3 space-y-2">{matchRequests.filter((request) => request.incoming && request.status === "pending").map((request) => <div key={request.id} className="rounded-2xl bg-white/5 p-3"><p className="text-sm font-bold">{request.otherName}</p><p className="mt-1 text-xs text-white/50">{language === "es" ? "Quiere conectar contigo" : "Wants to connect"}</p><div className="mt-3 flex gap-2"><button onClick={() => void respondToMatch(request, "rejected")} className="flex-1 rounded-xl bg-white/10 py-2 text-xs font-bold">×</button><button onClick={() => void respondToMatch(request, "accepted")} className="pink-gradient flex-1 rounded-xl py-2 text-xs font-bold">✓</button></div></div>)}</div></aside>}
