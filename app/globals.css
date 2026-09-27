@@ -27,39 +27,39 @@ select.blynk-language-native {
   display: none;
 }
 
-.blynk-language-switcher {
-  display: inline-flex;
-  align-items: center;
-  overflow: hidden;
+.blynk-profile-language-menu {
+  position: fixed;
+  right: 1rem;
+  top: 8.75rem;
+  z-index: 45;
+  min-width: 9.75rem;
   border: 1px solid rgb(244 114 182 / .42);
-  border-radius: 9999px;
-  background: rgb(255 255 255 / .06);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 8px 20px rgb(236 72 153 / .12);
-  padding: .22rem;
-}
-
-.blynk-language-switcher button {
-  border: 0;
-  border-radius: 9999px;
-  background: transparent;
-  color: rgb(255 255 255 / .64);
-  font-size: .78rem;
-  font-weight: 800;
-  line-height: 1;
-  padding: .56rem .72rem;
-  transition: background .2s ease, color .2s ease, box-shadow .2s ease;
-}
-
-.blynk-language-switcher button[aria-pressed="true"] {
-  background: linear-gradient(135deg, #ff4faf, #b247ed);
-  box-shadow: 0 5px 14px rgb(236 72 153 / .32);
-  color: #fff;
-}
-
-.blynk-language-switcher button:hover:not([aria-pressed="true"]) {
-  background: rgb(255 255 255 / .08);
+  border-radius: 1rem;
+  background: rgb(23 21 38 / .97);
+  box-shadow: 0 16px 34px rgb(0 0 0 / .38), 0 0 0 1px rgb(255 255 255 / .04) inset;
   color: #fff1f8;
+  overflow: hidden;
 }
+
+.blynk-profile-language-menu summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  font-size: .8rem;
+  font-weight: 800;
+  gap: .5rem;
+  list-style: none;
+  padding: .7rem .8rem;
+}
+
+.blynk-profile-language-menu summary::-webkit-details-marker { display: none; }
+.blynk-profile-language-menu[open] summary { border-bottom: 1px solid rgb(255 255 255 / .1); }
+.blynk-language-chevron { color: #f9a8d4; margin-left: auto; transition: transform .2s ease; }
+.blynk-profile-language-menu[open] .blynk-language-chevron { transform: rotate(180deg); }
+.blynk-profile-language-options { display: grid; gap: .25rem; padding: .4rem; }
+.blynk-profile-language-options button { border: 0; border-radius: .7rem; background: transparent; color: rgb(255 255 255 / .68); cursor: pointer; font-size: .8rem; font-weight: 800; padding: .64rem .7rem; text-align: left; }
+.blynk-profile-language-options button:hover { background: rgb(255 255 255 / .08); color: #fff; }
+.blynk-profile-language-options button[aria-pressed="true"] { background: linear-gradient(135deg, #ff4faf, #b247ed); box-shadow: 0 5px 14px rgb(236 72 153 / .3); color: #fff; }
 
 /* Fallback appearance before the interactive Blynk control has hydrated. */
 select[aria-label="Idioma"],
