@@ -343,7 +343,7 @@ export default function BlynkHome() {
     const { data, error } = await supabase.from("messages").insert({ sender_id: user.id, receiver_id: activeMatch.otherId, content: content || null, media_url: mediaUrl || null, media_type: mediaType }).select("id, created_at, read_at").single();
     setSendingMessage(false);
     if (error) { notify(error.message); return; }
-    setChat((items) => [...items, { id: data.id, from: "me", text: content, mediaUrl: mediaUrl || undefined, mediaType: mediaType || undefined, createdAt: data.created_at, readAt: data.read_at }]);
+    setChat((items) => [...items, { id: data.id, from: "me", text: content, mediaUrl: mediaUrl || undefined, mediaType: mediaType || undefined, createdAt: data.created_at, readAt: null }]);
     setMessage(""); setMessageMediaFile(null); setMessageMediaPreview("");
   };
 
