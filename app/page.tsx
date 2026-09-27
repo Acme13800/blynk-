@@ -543,7 +543,8 @@ export default function BlynkHome() {
       menu.dataset.blynkProfileLanguageMenu = "true";
       menu.className = "blynk-profile-language-menu";
       menu.innerHTML = `<summary><span aria-hidden="true">◎</span><span>${language === "es" ? "Español" : "English"}</span><span aria-hidden="true" class="blynk-language-chevron">⌄</span></summary><div class="blynk-profile-language-options"><button type="button" aria-pressed="${language === "en"}">English</button><button type="button" aria-pressed="${language === "es"}">Español</button></div>`;
-      root.appendChild(menu);
+      const accountCard = Array.from(root.querySelectorAll<HTMLElement>("article")).find((article) => article.textContent?.includes(language === "es" ? "Privacidad y cuenta" : "Privacy and account"));
+      if (accountCard) accountCard.after(menu); else root.appendChild(menu);
       const [englishButton, spanishButton] = Array.from(menu.querySelectorAll<HTMLButtonElement>("button"));
       const chooseEnglish = () => { setLanguage("en"); menu.removeAttribute("open"); };
       const chooseSpanish = () => { setLanguage("es"); menu.removeAttribute("open"); };

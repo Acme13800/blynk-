@@ -97,4 +97,14 @@ select[aria-label="Language"] option {
 @keyframes blynk-eye-blink { 0%, 82%, 100% { transform: scaleY(1); } 88%, 94% { transform: scaleY(.12); } }
 button[class*="z-[70]"] > span:first-child { position: relative; overflow: hidden; font-size: 0 !important; background: transparent !important; }
 button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; height: 19px; border-radius: 60% 12%; background: radial-gradient(circle at 50% 50%, #071726 0 19%, #39d9dc 21% 37%, #fff7fd 39% 64%, #f13ab5 66% 100%); transform: rotate(45deg); box-shadow: 0 0 16px #f13ab5; animation: blynk-eye-blink 2.3s ease-in-out infinite; }
-@media (max-width: 640px) { .mobile-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); } }
+@media (max-width: 640px) {
+  .mobile-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .blynk-profile-language-menu {
+    position: static;
+    display: block;
+    margin: 1rem 0 6.5rem;
+    min-width: 0;
+    width: 100%;
+    z-index: auto;
+  }
+}
