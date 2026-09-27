@@ -123,19 +123,34 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
 @media (max-width: 640px) {
   .mobile-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   .blynk-video-feed {
+    min-height: calc(100dvh - 3.7rem);
     margin-left: calc(50% - 50vw) !important;
     margin-right: calc(50% - 50vw) !important;
     max-width: none !important;
+    position: relative;
     width: 100vw;
   }
+  .blynk-video-feed > div.mb-3,
+  .blynk-video-feed > button.mb-3 { display: none; }
   .blynk-video-feed > article {
     border-radius: 0 !important;
-    height: calc(100dvh - 11.5rem);
-    min-height: 34rem;
+    aspect-ratio: auto !important;
+    height: calc(100dvh - 3.7rem);
+    margin-left: calc(50% - 50vw);
+    max-width: none !important;
+    min-height: 0;
+    width: 100vw !important;
   }
-  .blynk-video-feed > article > div:last-child { padding: 1.5rem; }
-  .blynk-video-feed > article + p { margin: 0; padding: .65rem 1rem; }
-  .blynk-video-feed > article ~ div.grid { margin: 0 1rem; }
+  .blynk-video-feed > article > div:last-child { padding: 1.5rem 1.5rem 9.25rem; }
+  .blynk-video-feed > article + p { display: none; }
+  .blynk-video-feed > article ~ div.grid {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+    left: 1rem;
+    margin: 0;
+    position: fixed;
+    right: 1rem;
+    z-index: 35;
+  }
   .blynk-profile-language-menu {
     position: static;
     display: block;
