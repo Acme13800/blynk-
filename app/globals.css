@@ -19,7 +19,7 @@ button { cursor: pointer; }
 .no-scrollbar { scrollbar-width: auto; scrollbar-color: #f13ab5 #090914; }
 .video-shade { background: linear-gradient(180deg, #09091455 5%, transparent 35%, #090914e8 100%); }
 .blynk-message-receipt { display: inline-block; margin-left: .52rem; font-size: .9rem; font-weight: 900; letter-spacing: .06rem; line-height: 1; vertical-align: -1px; }
-.blynk-message-receipt.is-delivered { color: #050509; text-shadow: 0 0 2px #ffffffaa; }
+.blynk-message-receipt.is-delivered { color: #000000; text-shadow: none; -webkit-text-stroke: .6px #000000; }
 .blynk-message-receipt.is-read { color: #00eb91; text-shadow: 0 0 13px #00eb91aa; }
 @keyframes blynk-eye-blink { 0%, 82%, 100% { transform: scaleY(1); } 88%, 94% { transform: scaleY(.12); } }
 button[class*="z-[70]"] > span:first-child { position: relative; overflow: hidden; font-size: 0 !important; background: transparent !important; }

@@ -414,7 +414,6 @@ export default function BlynkHome() {
             setChat((items) => [...items, { id: messageRow.id, from: name, text: messageRow.content || "", mediaUrl: messageRow.media_url || undefined, mediaType: messageRow.media_type || undefined, createdAt: messageRow.created_at }]);
             await client.from("messages").update({ read_at: new Date().toISOString() }).eq("id", messageRow.id);
           }
-          notify(messageRow.media_type ? (language === "es" ? "Recibiste una foto o video nuevo." : "You received a new photo or video.") : (language === "es" ? "Tienes un mensaje nuevo." : "You have a new message."));
           void loadMatches();
         })
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `sender_id=eq.${user.id}` }, (payload) => {
