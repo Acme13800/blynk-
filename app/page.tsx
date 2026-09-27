@@ -361,6 +361,19 @@ export default function BlynkHome() {
   // Keyboard listener is intentionally installed once for the screen lifetime.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowDown") nextPerson(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
+  // Give Discover a full-height vertical-video stage while preserving the existing swipe action.
+  useEffect(() => {
+    const root = document.querySelector("main.blynk-shell");
+    const feed = root?.querySelector<HTMLElement>("section.min-w-0 > div.mx-auto.max-w-md");
+    if (!feed || tab !== "discover") return;
+    feed.classList.add("blynk-video-feed");
+    const card = feed.querySelector<HTMLElement>("article");
+    if (card) {
+      card.classList.remove("blynk-video-enter");
+      window.requestAnimationFrame(() => card.classList.add("blynk-video-enter"));
+    }
+    return () => feed.classList.remove("blynk-video-feed");
+  }, [tab, person?.id]);
   // Make the visible “Next” control a real discard, even when its compact card is re-rendered.
   useEffect(() => { const onSkipClick = (event: MouseEvent) => { const button = (event.target as HTMLElement).closest("button"); if (button?.textContent?.includes(`× ${t.skip}`)) { event.preventDefault(); event.stopPropagation(); void skipProfile(); } }; document.addEventListener("click", onSkipClick, true); return () => document.removeEventListener("click", onSkipClick, true); }, [language, person?.id]);
   // The request control lives in the video card; this listener keeps that control usable for dynamic profiles.

@@ -22,6 +22,29 @@ button { cursor: pointer; }
 .blynk-message-receipt.is-delivered { color: #000000; text-shadow: none; -webkit-text-stroke: .6px #000000; }
 .blynk-message-receipt.is-read { color: #00eb91; text-shadow: 0 0 13px #00eb91aa; }
 
+/* Discover becomes a vertical, immersive video experience. */
+.blynk-video-feed {
+  max-width: 30rem !important;
+  overflow: clip;
+}
+
+.blynk-video-feed > article {
+  aspect-ratio: 9 / 16 !important;
+  min-height: min(calc(100dvh - 13rem), 50rem);
+}
+
+.blynk-video-feed > article > video,
+.blynk-video-feed > article > img {
+  object-fit: cover;
+}
+
+@keyframes blynk-video-enter {
+  from { opacity: .35; transform: translateY(7%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.blynk-video-enter { animation: blynk-video-enter .3s cubic-bezier(.2, .8, .2, 1); }
+
 /* Polished language control used in the app header. */
 select.blynk-language-native {
   display: none;
@@ -99,6 +122,20 @@ button[class*="z-[70]"] > span:first-child { position: relative; overflow: hidde
 button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; height: 19px; border-radius: 60% 12%; background: radial-gradient(circle at 50% 50%, #071726 0 19%, #39d9dc 21% 37%, #fff7fd 39% 64%, #f13ab5 66% 100%); transform: rotate(45deg); box-shadow: 0 0 16px #f13ab5; animation: blynk-eye-blink 2.3s ease-in-out infinite; }
 @media (max-width: 640px) {
   .mobile-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .blynk-video-feed {
+    margin-left: calc(50% - 50vw) !important;
+    margin-right: calc(50% - 50vw) !important;
+    max-width: none !important;
+    width: 100vw;
+  }
+  .blynk-video-feed > article {
+    border-radius: 0 !important;
+    height: calc(100dvh - 11.5rem);
+    min-height: 34rem;
+  }
+  .blynk-video-feed > article > div:last-child { padding: 1.5rem; }
+  .blynk-video-feed > article + p { margin: 0; padding: .65rem 1rem; }
+  .blynk-video-feed > article ~ div.grid { margin: 0 1rem; }
   .blynk-profile-language-menu {
     position: static;
     display: block;
