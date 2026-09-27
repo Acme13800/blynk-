@@ -141,7 +141,13 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
     min-height: 0;
     width: 100vw !important;
   }
-  .blynk-video-feed > article > div:last-child { padding: 1.5rem 1.5rem 9.25rem; }
+  .blynk-video-feed > article > div:last-child {
+    bottom: 0;
+    left: 0;
+    padding: 1.5rem 1.5rem 2rem;
+    right: 0;
+    text-align: left;
+  }
   .blynk-video-feed > article + p { display: none; }
   .blynk-video-feed > article ~ div.grid {
     bottom: calc(5.5rem + env(safe-area-inset-bottom));
