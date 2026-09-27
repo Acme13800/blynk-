@@ -96,6 +96,17 @@ export default function BlynkHome() {
     if (error) { notify(error.message); return; }
     setRegisteredPeople((profiles) => profiles.map((profile) => profile.id === person.id ? { ...profile, likedByMe: !liked, likeCount: Math.max(0, (profile.likeCount || 0) + (liked ? -1 : 1)) } : profile));
   };
+  const skipProfile = async () => {
+    if (!person) return;
+    if (!supabase || person.id.length < 20) { nextPerson(); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { notify(language === "es" ? "Inicia sesión para descartar perfiles." : "Sign in to skip profiles."); return; }
+    const { error } = await supabase.from("profile_skips").upsert({ profile_id: person.id, user_id: user.id }, { onConflict: "user_id,profile_id", ignoreDuplicates: true });
+    if (error) { notify(language === "es" ? `No se pudo descartar el perfil: ${error.message}` : `Could not skip this profile: ${error.message}`); return; }
+    setRegisteredPeople((profiles) => profiles.filter((profile) => profile.id !== person.id));
+    setPersonIndex(0);
+    notify(language === "es" ? "Perfil descartado." : "Profile skipped.");
+  };
   const openPublicProfile = async (selected: DiscoverPerson) => {
     setViewingProfile({ person: selected, media: [] });
     if (!supabase || selected.id.length < 20) return;
@@ -103,7 +114,7 @@ export default function BlynkHome() {
     setViewingProfile({ person: selected, media: (data || []).map((item) => item.media_url) });
   };
   const onTouchStart = (event: React.TouchEvent) => { startY.current = event.touches[0].clientY; };
-  const onTouchEnd = (event: React.TouchEvent) => { if (startY.current - event.changedTouches[0].clientY > 55) nextPerson(); };
+  const onTouchEnd = (event: React.TouchEvent) => { if (startY.current - event.changedTouches[0].clientY > 55) void skipProfile(); };
   const addPost = async () => {
     if ((!postText.trim() && !postVideo) || uploadingPost) return;
     let publishedVideo = postVideo;
@@ -350,6 +361,8 @@ export default function BlynkHome() {
   // Keyboard listener is intentionally installed once for the screen lifetime.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowDown") nextPerson(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
+  // Make the visible “Next” control a real discard, even when its compact card is re-rendered.
+  useEffect(() => { const onSkipClick = (event: MouseEvent) => { const button = (event.target as HTMLElement).closest("button"); if (button?.textContent?.includes(`× ${t.skip}`)) { event.preventDefault(); event.stopPropagation(); void skipProfile(); } }; document.addEventListener("click", onSkipClick, true); return () => document.removeEventListener("click", onSkipClick, true); }, [language, person?.id]);
   // The request control lives in the video card; this listener keeps that control usable for dynamic profiles.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button = (event.target as HTMLElement).closest("button"); if (button?.textContent?.includes(t.request)) void requestMatch(); }; document.addEventListener("click", onRequestClick); return () => document.removeEventListener("click", onRequestClick); }, [language, person.id, registeredPeople.length]);
@@ -382,12 +395,16 @@ export default function BlynkHome() {
       if (!user) return;
       const { data } = await client.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url, city, birth_date, connection_intent, interests").neq("id", user.id).limit(50);
       if (!data?.length) return;
+      const { data: skipRows } = await client.from("profile_skips").select("profile_id").eq("user_id", user.id);
+      const skippedIds = new Set((skipRows || []).map((skip) => skip.profile_id));
+      const visibleProfiles = data.filter((profile) => !skippedIds.has(profile.id));
+      if (!visibleProfiles.length) { setRegisteredPeople([]); return; }
       const accents = ["from-orange-400 via-rose-500 to-violet-700", "from-fuchsia-600 via-purple-600 to-sky-700", "from-emerald-500 via-teal-700 to-slate-900"];
-      const profileIds = data.map((profile) => profile.id);
+      const profileIds = visibleProfiles.map((profile) => profile.id);
       const { data: likeRows } = await client.from("profile_likes").select("profile_id, user_id").in("profile_id", profileIds);
       const likeCounts = (likeRows || []).reduce<Record<string, number>>((counts, like) => ({ ...counts, [like.profile_id]: (counts[like.profile_id] || 0) + 1 }), {});
       const myLikes = new Set((likeRows || []).filter((like) => like.user_id === user.id).map((like) => like.profile_id));
-      setRegisteredPeople(data.map((profile, index) => ({ id: profile.id, name: profile.display_name || "Blynk user", age: profileAge(profile.birth_date), place: profile.city || (language === "es" ? "Ciudad no especificada" : "City not specified"), emoji: "✦", accent: accents[index % accents.length], intro: profile.bio || (language === "es" ? "Perfil listo para conectar." : "A profile ready to connect."), tags: profile.interests?.length ? profile.interests : [language === "es" ? "Nuevo" : "New"], intent: profile.connection_intent || "", video: profile.presentation_video_url || "", avatarUrl: profile.avatar_url || "", likeCount: likeCounts[profile.id] || 0, likedByMe: myLikes.has(profile.id) })));
+      setRegisteredPeople(visibleProfiles.map((profile, index) => ({ id: profile.id, name: profile.display_name || "Blynk user", age: profileAge(profile.birth_date), place: profile.city || (language === "es" ? "Ciudad no especificada" : "City not specified"), emoji: "✦", accent: accents[index % accents.length], intro: profile.bio || (language === "es" ? "Perfil listo para conectar." : "A profile ready to connect."), tags: profile.interests?.length ? profile.interests : [language === "es" ? "Nuevo" : "New"], intent: profile.connection_intent || "", video: profile.presentation_video_url || "", avatarUrl: profile.avatar_url || "", likeCount: likeCounts[profile.id] || 0, likedByMe: myLikes.has(profile.id) })));
     }
     void loadRegisteredPeople();
   }, [language]);
