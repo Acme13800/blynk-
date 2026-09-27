@@ -490,6 +490,52 @@ export default function BlynkHome() {
     void loadCommunity();
   }, [language]);
 
+  // A few legacy interface labels were written directly into the early prototype.
+  // Keep them aligned with the selected language until they are moved into the copy map.
+  useEffect(() => {
+    const root = document.querySelector("main.blynk-shell");
+    if (!root) return;
+    const labels = language === "es"
+      ? new Map<string, string>()
+      : new Map<string, string>([
+          ["Tu perfil está al 78%", "Your profile is 78% complete"],
+          ["Agrega un video de presentación y recibe más conexiones relevantes.", "Add an introduction video to receive more relevant connections."],
+          ["▶ Video de presentación", "▶ Introduction video"],
+          ["Tu perfil", "Your profile"],
+          ["Video de presentación", "Introduction video"],
+          ["Este video se mostrará a las personas antes de que decidan enviarte una solicitud.", "This video is shown before people decide whether to send you a match request."],
+          ["▣ Elegir video", "▣ Choose video"],
+          ["Subiendo…", "Uploading…"],
+          ["Publicar como video de presentación", "Publish as introduction video"],
+        ]);
+    if (labels.size) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const nodes: Text[] = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+      nodes.forEach((node) => {
+        const replacement = labels.get(node.textContent || "");
+        if (replacement) node.textContent = replacement;
+      });
+    }
+    const selector = root.querySelector<HTMLSelectElement>('select[aria-label="Idioma"], select[aria-label="Language"]');
+    if (selector) {
+      selector.setAttribute("aria-label", language === "es" ? "Idioma" : "Language");
+      if (selector.options[0]) selector.options[0].text = "Español";
+      if (selector.options[1]) selector.options[1].text = "English";
+    }
+    const accountLink = root.querySelector<HTMLAnchorElement>('a[href="/login"]');
+    if (!accountLink) return;
+    if (!myProfile.email) {
+      accountLink.textContent = language === "es" ? "Ingresar" : "Sign in";
+      return;
+    }
+    accountLink.textContent = language === "es" ? "Cerrar sesión" : "Sign out";
+    accountLink.setAttribute("aria-label", language === "es" ? "Cerrar sesión" : "Sign out");
+    const onSignOut = (event: MouseEvent) => { event.preventDefault(); void signOut(); };
+    accountLink.addEventListener("click", onSignOut);
+    return () => accountLink.removeEventListener("click", onSignOut);
+  }, [language, myProfile.email, presentationOpen]);
+
   return <main className="blynk-shell min-h-screen">
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#090914e8] backdrop-blur-xl"><div className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6"><button onClick={() => setTab("discover")} className="flex items-center gap-2 text-xl font-black tracking-tight"><span aria-hidden="true" className="drop-shadow-[0_0_8px_#f13ab5]"><svg viewBox="0 0 96 58" className="h-7 w-9"><defs><linearGradient id="blynk-mini-eye" x1="0" x2="1"><stop stopColor="#ff4fac"/><stop offset="1" stopColor="#a855f7"/></linearGradient></defs><path d="M3 29C16 11 31 3 48 3s32 8 45 26C80 47 65 55 48 55S16 47 3 29Z" fill="url(#blynk-mini-eye)"/><path d="M13 29C24 18 35 13 48 13s24 5 35 16C72 40 61 45 48 45S24 40 13 29Z" fill="#fff4fb"/><circle cx="48" cy="29" r="11" fill="#18bfc9"/><circle cx="48" cy="29" r="6" fill="#07101e"/><circle cx="44" cy="25" r="2.5" fill="white"/></svg></span><span className="bg-gradient-to-r from-pink-400 to-violet-400 bg-clip-text text-transparent">Blynk</span></button><span aria-label="Ojo Blynk" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 drop-shadow-[0_0_14px_#f13ab5]"><svg viewBox="0 0 96 58" className="h-10 w-16 sm:h-12 sm:w-20" role="img"><defs><linearGradient id="blynk-eye" x1="0" x2="1"><stop stopColor="#ff4fac"/><stop offset="1" stopColor="#a855f7"/></linearGradient><radialGradient id="blynk-iris"><stop stopColor="#d8ffff"/><stop offset=".42" stopColor="#46e4e2"/><stop offset=".72" stopColor="#117f9c"/><stop offset="1" stopColor="#071726"/></radialGradient></defs><path d="M3 29C16 11 31 3 48 3s32 8 45 26C80 47 65 55 48 55S16 47 3 29Z" fill="url(#blynk-eye)"/><path d="M10 29C21 16 34 10 48 10s27 6 38 19C75 42 62 48 48 48S21 42 10 29Z" fill="#fff4fb"/><circle cx="48" cy="29" r="16" fill="url(#blynk-iris)"/><circle cx="48" cy="29" r="8" fill="#07101e"/><circle cx="42" cy="23" r="4" fill="white"/><circle cx="54" cy="35" r="2" fill="#baffff"/></svg></span><div className="flex items-center gap-2"><select aria-label="Idioma" value={language} onChange={(event) => setLanguage(event.target.value as Language)} className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none"><option value="es">ES</option><option value="en">EN</option></select><a href="/login" className="hidden rounded-full border border-white/15 px-4 py-2 text-sm font-bold text-white sm:block">{language === "es" ? "Ingresar" : "Sign in"}</a></div></div></header>
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-4 pb-24 pt-6 md:px-6 lg:grid-cols-[185px_minmax(0,1fr)_260px]">

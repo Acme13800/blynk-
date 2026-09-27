@@ -21,6 +21,34 @@ button { cursor: pointer; }
 .blynk-message-receipt { display: inline-block; margin-left: .52rem; font-size: .9rem; font-weight: 900; letter-spacing: .06rem; line-height: 1; vertical-align: -1px; }
 .blynk-message-receipt.is-delivered { color: #000000; text-shadow: none; -webkit-text-stroke: .6px #000000; }
 .blynk-message-receipt.is-read { color: #00eb91; text-shadow: 0 0 13px #00eb91aa; }
+
+/* Polished language control used in the app header. */
+select[aria-label="Idioma"],
+select[aria-label="Language"] {
+  appearance: none;
+  min-width: 7.75rem;
+  border-color: rgb(244 114 182 / .38) !important;
+  border-radius: 9999px;
+  background-color: rgb(255 255 255 / .08) !important;
+  background-image: linear-gradient(45deg, transparent 50%, #f9a8d4 50%), linear-gradient(135deg, #f9a8d4 50%, transparent 50%);
+  background-position: calc(100% - 1.05rem) calc(50% - .12rem), calc(100% - .72rem) calc(50% - .12rem);
+  background-repeat: no-repeat;
+  background-size: .36rem .36rem, .36rem .36rem;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 8px 20px rgb(236 72 153 / .12);
+  color: #fff1f8 !important;
+  font-weight: 800;
+  padding: .62rem 2.1rem .62rem 1rem !important;
+  transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
+}
+
+select[aria-label="Idioma"]:hover,
+select[aria-label="Language"]:hover,
+select[aria-label="Idioma"]:focus,
+select[aria-label="Language"]:focus {
+  border-color: #f9a8d4 !important;
+  background-color: rgb(236 72 153 / .16) !important;
+  box-shadow: 0 0 0 3px rgb(244 114 182 / .15), 0 10px 24px rgb(236 72 153 / .2);
+}
 @keyframes blynk-eye-blink { 0%, 82%, 100% { transform: scaleY(1); } 88%, 94% { transform: scaleY(.12); } }
 button[class*="z-[70]"] > span:first-child { position: relative; overflow: hidden; font-size: 0 !important; background: transparent !important; }
 button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; height: 19px; border-radius: 60% 12%; background: radial-gradient(circle at 50% 50%, #071726 0 19%, #39d9dc 21% 37%, #fff7fd 39% 64%, #f13ab5 66% 100%); transform: rotate(45deg); box-shadow: 0 0 16px #f13ab5; animation: blynk-eye-blink 2.3s ease-in-out infinite; }
