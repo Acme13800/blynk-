@@ -142,6 +142,10 @@ export default function AdminPage() {
     if (approved) await setSuspension(appeal.user_id, false);
     const { error } = await supabase.from("account_appeals").update({ status: approved ? "approved" : "denied", reviewed_at: new Date().toISOString(), reviewed_by: user.id }).eq("id", appeal.id);
     if (error) { setNotice(error.message); return; }
+    if (!approved) {
+      const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: appeal.user_id, notice_type: "appeal_denied" });
+      if (noticeError) { setNotice(`Appeal was denied, but the account notice could not be sent: ${noticeError.message}`); return; }
+    }
     setAppeals((items) => items.filter((item) => item.id !== appeal.id));
     setNotice(approved ? "Appeal approved and profile restored." : "Appeal denied.");
   };

@@ -16,7 +16,7 @@ type InboxPreview = { content: string; createdAt: string; unread: boolean };
 type DiscoverPerson = { id: string; name: string; age: number; place: string; emoji: string; accent: string; intro: string; tags: string[]; intent?: string; video: string; avatarUrl?: string; likeCount?: number; likedByMe?: boolean };
 type MatchRequest = { id: string; otherId: string; otherName: string; otherBio?: string; otherAvatarUrl?: string; otherVideoUrl?: string; incoming: boolean; status: "pending" | "accepted" | "rejected" };
 type SafetyAction = { kind: "report" | "block"; targetId: string; targetName: string; closeConversation?: boolean };
-type AccountNotice = { id: string; notice_type: "profile_suspended" | "profile_restored" };
+type AccountNotice = { id: string; notice_type: "profile_suspended" | "profile_restored" | "appeal_denied" };
 type BlockedProfile = { id: string; name: string; avatarUrl: string; reason: string };
 
 const people: DiscoverPerson[] = [
@@ -567,8 +567,17 @@ export default function BlynkHome() {
     async function loadAccountNotice() {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return;
-      const { data } = await client.from("account_notices").select("id, notice_type").eq("user_id", user.id).is("read_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      if (data) setAccountNotice(data as AccountNotice);
+      const [{ data: profile }, { data: notice }] = await Promise.all([
+        client.from("profiles").select("suspended_at").eq("id", user.id).maybeSingle(),
+        client.from("account_notices").select("id, notice_type").eq("user_id", user.id).is("read_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (!notice) return;
+      // A prior restoration notice must never override a currently suspended account.
+      if (notice.notice_type === "profile_restored" && profile?.suspended_at) {
+        await client.from("account_notices").update({ read_at: new Date().toISOString() }).eq("id", notice.id);
+        return;
+      }
+      setAccountNotice(notice as AccountNotice);
     }
     void loadAccountNotice();
   }, []);
@@ -809,6 +818,19 @@ export default function BlynkHome() {
       const dialog = Array.from(document.querySelectorAll<HTMLElement>('section[role="dialog"]')).find((element) => element.textContent?.includes(language === "es" ? "Tu perfil fue suspendido" : "Your profile was suspended"));
       if (!dialog || dialog.querySelector("[data-blynk-appeal-button]")) return;
       const button = document.createElement("button"); button.dataset.blynkAppealButton = "true"; button.className = "mt-3 w-full text-sm font-bold text-pink-200"; button.textContent = language === "es" ? "Solicitar revisión" : "Request a review"; button.addEventListener("click", () => setAppealOpen(true)); dialog.appendChild(button);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [accountNotice, language]);
+
+  useEffect(() => {
+    if (!accountNotice || accountNotice.notice_type !== "appeal_denied") return;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = Array.from(document.querySelectorAll<HTMLElement>('section[role="dialog"]')).find((element) => element.textContent?.includes(language === "es" ? "Tu perfil fue restaurado" : "Your profile was restored"));
+      if (!dialog) return;
+      dialog.querySelector("span")!.textContent = "⚠";
+      dialog.querySelector("h2")!.textContent = language === "es" ? "Solicitud no aprobada" : "Review request not approved";
+      const description = dialog.querySelectorAll("p")[1];
+      if (description) description.textContent = language === "es" ? "Tu solicitud fue revisada y tu perfil permanece suspendido. No aparecerá en Descubrir ni podrás iniciar nuevas conversaciones." : "Your request was reviewed and your profile remains suspended. It will not appear in Discover and you cannot start new conversations.";
     });
     return () => window.cancelAnimationFrame(frame);
   }, [accountNotice, language]);
