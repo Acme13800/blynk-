@@ -107,6 +107,24 @@ export default function BlynkHome() {
     setPersonIndex(0);
     notify(language === "es" ? "Perfil descartado." : "Profile skipped.");
   };
+  const blockProfile = async () => {
+    if (!person || !supabase || person.id.length < 20) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { notify(language === "es" ? "Inicia sesión para bloquear perfiles." : "Sign in to block profiles."); return; }
+    const { error } = await supabase.from("blocks").upsert({ blocker_id: user.id, blocked_id: person.id }, { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true });
+    if (error) { notify(language === "es" ? `No se pudo bloquear el perfil: ${error.message}` : `Could not block this profile: ${error.message}`); return; }
+    setRegisteredPeople((profiles) => profiles.filter((profile) => profile.id !== person.id));
+    setPersonIndex(0);
+    notify(language === "es" ? "Perfil bloqueado. No volverá a aparecer." : "Profile blocked. It will not appear again.");
+  };
+  const reportProfile = async () => {
+    if (!person || !supabase || person.id.length < 20) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { notify(language === "es" ? "Inicia sesión para reportar perfiles." : "Sign in to report profiles."); return; }
+    const { error } = await supabase.from("reports").insert({ reporter_id: user.id, target_user_id: person.id, reason: "Profile report from Discover" });
+    if (error) { notify(language === "es" ? `No se pudo enviar el reporte: ${error.message}` : `Could not send report: ${error.message}`); return; }
+    notify(language === "es" ? "Reporte enviado. Gracias por ayudarnos a cuidar la comunidad." : "Report sent. Thanks for helping keep the community safe.");
+  };
   const openPublicProfile = async (selected: DiscoverPerson) => {
     setViewingProfile({ person: selected, media: [] });
     if (!supabase || selected.id.length < 20) return;
@@ -374,6 +392,30 @@ export default function BlynkHome() {
     }
     return () => feed.classList.remove("blynk-video-feed");
   }, [tab, person?.id]);
+  // The Discover safety menu keeps block and report actions close to the profile being reviewed.
+  useEffect(() => {
+    const root = document.querySelector("main.blynk-shell");
+    const card = root?.querySelector<HTMLElement>(".blynk-video-feed > article");
+    if (!card || tab !== "discover" || !person || person.id.length < 20) return;
+    card.querySelector("[data-blynk-profile-safety]")?.remove();
+    const control = document.createElement("div");
+    control.dataset.blynkProfileSafety = "true";
+    control.className = "blynk-profile-safety";
+    control.innerHTML = `<button type="button" class="blynk-profile-safety-trigger" aria-label="${language === "es" ? "Opciones de seguridad" : "Safety options"}">•••</button><div class="blynk-profile-safety-menu"><button type="button" data-action="report">⚑ ${language === "es" ? "Reportar perfil" : "Report profile"}</button><button type="button" data-action="block">⊘ ${language === "es" ? "Bloquear perfil" : "Block profile"}</button></div>`;
+    card.appendChild(control);
+    const trigger = control.querySelector<HTMLButtonElement>(".blynk-profile-safety-trigger");
+    const reportButton = control.querySelector<HTMLButtonElement>('[data-action="report"]');
+    const blockButton = control.querySelector<HTMLButtonElement>('[data-action="block"]');
+    const stop = (event: Event) => event.stopPropagation();
+    const toggle = (event: Event) => { event.stopPropagation(); control.classList.toggle("is-open"); };
+    const report = (event: Event) => { event.stopPropagation(); control.classList.remove("is-open"); void reportProfile(); };
+    const block = (event: Event) => { event.stopPropagation(); control.classList.remove("is-open"); void blockProfile(); };
+    control.addEventListener("click", stop);
+    trigger?.addEventListener("click", toggle);
+    reportButton?.addEventListener("click", report);
+    blockButton?.addEventListener("click", block);
+    return () => { control.remove(); };
+  }, [tab, person?.id, language]);
   // Make the visible “Next” control a real discard, even when its compact card is re-rendered.
   useEffect(() => { const onSkipClick = (event: MouseEvent) => { const button = (event.target as HTMLElement).closest("button"); if (button?.textContent?.includes(`× ${t.skip}`)) { event.preventDefault(); event.stopPropagation(); void skipProfile(); } }; document.addEventListener("click", onSkipClick, true); return () => document.removeEventListener("click", onSkipClick, true); }, [language, person?.id]);
   // The request control lives in the video card; this listener keeps that control usable for dynamic profiles.
@@ -409,8 +451,10 @@ export default function BlynkHome() {
       const { data } = await client.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url, city, birth_date, connection_intent, interests").neq("id", user.id).limit(50);
       if (!data?.length) return;
       const { data: skipRows } = await client.from("profile_skips").select("profile_id").eq("user_id", user.id);
+      const { data: blockRows } = await client.from("blocks").select("blocked_id").eq("blocker_id", user.id);
       const skippedIds = new Set((skipRows || []).map((skip) => skip.profile_id));
-      const visibleProfiles = data.filter((profile) => !skippedIds.has(profile.id));
+      const blockedIds = new Set((blockRows || []).map((block) => block.blocked_id));
+      const visibleProfiles = data.filter((profile) => !skippedIds.has(profile.id) && !blockedIds.has(profile.id));
       if (!visibleProfiles.length) { setRegisteredPeople([]); return; }
       const accents = ["from-orange-400 via-rose-500 to-violet-700", "from-fuchsia-600 via-purple-600 to-sky-700", "from-emerald-500 via-teal-700 to-slate-900"];
       const profileIds = visibleProfiles.map((profile) => profile.id);
