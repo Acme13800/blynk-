@@ -448,13 +448,13 @@ export default function BlynkHome() {
     async function loadRegisteredPeople() {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return;
-      const { data } = await client.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url, city, birth_date, connection_intent, interests").neq("id", user.id).limit(50);
+      const { data } = await client.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url, city, birth_date, connection_intent, interests, suspended_at").neq("id", user.id).limit(50);
       if (!data?.length) return;
       const { data: skipRows } = await client.from("profile_skips").select("profile_id").eq("user_id", user.id);
       const { data: blockRows } = await client.from("blocks").select("blocked_id").eq("blocker_id", user.id);
       const skippedIds = new Set((skipRows || []).map((skip) => skip.profile_id));
       const blockedIds = new Set((blockRows || []).map((block) => block.blocked_id));
-      const visibleProfiles = data.filter((profile) => !skippedIds.has(profile.id) && !blockedIds.has(profile.id));
+      const visibleProfiles = data.filter((profile) => !profile.suspended_at && !skippedIds.has(profile.id) && !blockedIds.has(profile.id));
       if (!visibleProfiles.length) { setRegisteredPeople([]); return; }
       const accents = ["from-orange-400 via-rose-500 to-violet-700", "from-fuchsia-600 via-purple-600 to-sky-700", "from-emerald-500 via-teal-700 to-slate-900"];
       const profileIds = visibleProfiles.map((profile) => profile.id);
