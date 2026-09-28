@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
-type ReportRow = { id: string; target_user_id: string | null; reason: string; created_at: string };
+type ReportRow = { id: string; reporter_id: string; target_user_id: string | null; reason: string; created_at: string };
 type ProfileRow = { id: string; display_name: string | null; username: string | null; avatar_url: string | null; city: string | null; suspended_at: string | null };
 
 export default function AdminPage() {
@@ -22,7 +22,7 @@ export default function AdminPage() {
     if (!supabase) return;
     setRefreshing(true);
     try {
-      const { data: reportRows, error: reportError } = await supabase.from("reports").select("id, target_user_id, reason, created_at").not("target_user_id", "is", null).order("created_at", { ascending: false }).limit(100);
+      const { data: reportRows, error: reportError } = await supabase.from("reports").select("id, reporter_id, target_user_id, reason, created_at").not("target_user_id", "is", null).order("created_at", { ascending: false }).limit(100);
       if (reportError) { setNotice(reportError.message); return; }
       const rows = (reportRows || []) as ReportRow[];
       const ids = [...new Set(rows.map((report) => report.target_user_id).filter(Boolean))] as string[];
@@ -67,7 +67,34 @@ export default function AdminPage() {
     grouped[report.target_user_id].profile = profiles[report.target_user_id];
     grouped[report.target_user_id].reports.push(report);
     return grouped;
-  }, {})), [reports, profiles]);
+  }, {})).sort((left, right) => new Set(right.reports.map((report) => report.reporter_id)).size - new Set(left.reports.map((report) => report.reporter_id)).size || new Date(right.reports[0].created_at).getTime() - new Date(left.reports[0].created_at).getTime()), [reports, profiles]);
+  const highPriorityCount = groupedReports.filter((group) => new Set(group.reports.map((report) => report.reporter_id)).size >= 3).length;
+
+  useEffect(() => {
+    if (!authorized) return;
+    const root = document.querySelector("main.blynk-shell .mx-auto.max-w-3xl");
+    const header = root?.querySelector("header");
+    if (!root || !header) return;
+    root.querySelector("[data-blynk-priority-summary]")?.remove();
+    root.querySelectorAll("[data-blynk-priority-label]").forEach((label) => label.remove());
+    const summary = document.createElement("div");
+    summary.dataset.blynkPrioritySummary = "true";
+    summary.className = "mt-5 flex flex-wrap items-center gap-2";
+    summary.innerHTML = `<span class="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-white/65">${groupedReports.length} open case${groupedReports.length === 1 ? "" : "s"}</span><span class="rounded-full ${highPriorityCount ? "bg-rose-400/20 text-rose-100" : "bg-white/5 text-white/55"} px-3 py-1.5 text-xs font-bold">⚠ ${highPriorityCount} high priority</span><span class="text-xs text-white/40">High priority means 3+ reports from different accounts.</span>`;
+    header.after(summary);
+    const cards = Array.from(root.querySelectorAll<HTMLElement>("article"));
+    cards.forEach((card, index) => {
+      const reporters = new Set(groupedReports[index]?.reports.map((report) => report.reporter_id) || []).size;
+      if (reporters < 3) return;
+      card.classList.add("border-rose-300/40");
+      const label = document.createElement("span");
+      label.dataset.blynkPriorityLabel = "true";
+      label.className = "ml-2 rounded-full bg-rose-400/15 px-2 py-1 text-xs font-bold text-rose-200";
+      label.textContent = "High priority";
+      card.querySelector("h2")?.after(label);
+    });
+    return () => { summary.remove(); root.querySelectorAll("[data-blynk-priority-label]").forEach((label) => label.remove()); };
+  }, [authorized, groupedReports, highPriorityCount]);
 
   const setSuspension = async (profileId: string, suspended: boolean) => {
     if (!supabase) return;
@@ -75,6 +102,11 @@ export default function AdminPage() {
     if (error) { setNotice(error.message); return; }
     const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: profileId, notice_type: suspended ? "profile_suspended" : "profile_restored" });
     if (noticeError) { setNotice(`Profile updated, but the notice could not be sent: ${noticeError.message}`); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { error: auditError } = await supabase.from("moderation_actions").insert({ admin_id: user.id, target_user_id: profileId, action: suspended ? "suspended" : "restored" });
+      if (auditError) { setNotice(`Profile updated, but the audit record could not be saved: ${auditError.message}`); return; }
+    }
     setProfiles((items) => ({ ...items, [profileId]: { ...items[profileId], suspended_at: suspended ? new Date().toISOString() : null } }));
     setNotice(suspended ? "Profile suspended. It is now hidden from Discover." : "Profile restored.");
   };
