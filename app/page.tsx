@@ -17,6 +17,7 @@ type DiscoverPerson = { id: string; name: string; age: number; place: string; em
 type MatchRequest = { id: string; otherId: string; otherName: string; otherBio?: string; otherAvatarUrl?: string; otherVideoUrl?: string; incoming: boolean; status: "pending" | "accepted" | "rejected" };
 type SafetyAction = { kind: "report" | "block"; targetId: string; targetName: string; closeConversation?: boolean };
 type AccountNotice = { id: string; notice_type: "profile_suspended" | "profile_restored" };
+type BlockedProfile = { id: string; name: string; avatarUrl: string; reason: string };
 
 const people: DiscoverPerson[] = [
   { id: "sofia", name: "Sofía", age: 24, place: "Ciudad de México", emoji: "☕", accent: "from-orange-400 via-rose-500 to-violet-700", intro: "Una caminata, un café y una conversación sin prisa.", tags: ["Travel", "Photography", "Coffee"], intent: "Intentional dating", video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
@@ -74,6 +75,11 @@ export default function BlynkHome() {
   const [safetyReason, setSafetyReason] = useState("");
   const [accountNotice, setAccountNotice] = useState<AccountNotice | null>(null);
   const [accountSuspended, setAccountSuspended] = useState(false);
+  const [blockedProfiles, setBlockedProfiles] = useState<BlockedProfile[]>([]);
+  const [blockedListOpen, setBlockedListOpen] = useState(false);
+  const [appealOpen, setAppealOpen] = useState(false);
+  const [appealReason, setAppealReason] = useState("");
+  const [submittingAppeal, setSubmittingAppeal] = useState(false);
   const [myProfile, setMyProfile] = useState({ displayName: "", username: "", bio: "", email: "", avatarUrl: "", coverUrl: "", presentationVideoUrl: "", city: "", connectionIntent: "", interests: [] as string[] });
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -104,6 +110,28 @@ export default function BlynkHome() {
     const notice = accountNotice;
     setAccountNotice(null);
     await supabase.from("account_notices").update({ read_at: new Date().toISOString() }).eq("id", notice.id);
+  };
+  const unblockProfile = async (profileId: string) => {
+    if (!supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from("blocks").delete().eq("blocker_id", user.id).eq("blocked_id", profileId);
+    if (error) { notify(error.message); return; }
+    setBlockedProfiles((items) => items.filter((item) => item.id !== profileId));
+    notify(language === "es" ? "Persona desbloqueada." : "Person unblocked.");
+  };
+  const submitAppeal = async (providedReason = appealReason) => {
+    const reason = providedReason.trim();
+    if (!supabase || reason.length < 20 || submittingAppeal) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setSubmittingAppeal(true);
+    const { error } = await supabase.from("account_appeals").insert({ user_id: user.id, reason });
+    setSubmittingAppeal(false);
+    if (error) { notify(error.code === "23505" ? (language === "es" ? "Ya tienes una solicitud de revisión pendiente." : "You already have a review request pending.") : error.message); return; }
+    setAppealOpen(false);
+    setAppealReason("");
+    notify(language === "es" ? "Tu solicitud de revisión fue enviada." : "Your review request was sent.");
   };
   const messageTime = (date: string) => new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(date));
   const nextPerson = () => setPersonIndex((value) => (value + 1) % discoverPeople.length);
@@ -567,6 +595,21 @@ export default function BlynkHome() {
     }
     void loadRegisteredPeople();
   }, [language]);
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const client = supabase;
+    async function loadBlockedProfiles() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      const { data: blockRows } = await client.from("blocks").select("blocked_id, reason").eq("blocker_id", user.id);
+      const ids = (blockRows || []).map((row) => row.blocked_id);
+      if (!ids.length) { setBlockedProfiles([]); return; }
+      const { data: profiles } = await client.from("profiles").select("id, display_name, avatar_url").in("id", ids);
+      const byId = new Map((profiles || []).map((profile) => [profile.id, profile]));
+      setBlockedProfiles((blockRows || []).map((row) => ({ id: row.blocked_id, name: byId.get(row.blocked_id)?.display_name || (language === "es" ? "Perfil de Blynk" : "Blynk profile"), avatarUrl: byId.get(row.blocked_id)?.avatar_url || "", reason: row.reason || "" })));
+    }
+    void loadBlockedProfiles();
+  }, [language]);
   // Refreshes the signed-in person's incoming/outgoing match requests on load.
   useEffect(() => {
     async function refreshMatches() { await loadMatches(); }
@@ -744,6 +787,43 @@ export default function BlynkHome() {
     return () => { removeLanguageListeners?.(); accountLink.removeEventListener("click", onSignOut); };
   }, [language, myProfile.email, presentationOpen, tab, editingProfile, reviewingRequest, viewingProfile, previewingOwnProfile]);
 
+  useEffect(() => {
+    if (!blockedListOpen) return;
+    const overlay = document.createElement("div");
+    overlay.className = "fixed inset-0 z-[90] grid place-items-center bg-black/80 p-4 backdrop-blur-sm";
+    const panel = document.createElement("section");
+    panel.className = "blynk-card max-h-[80dvh] w-full max-w-md overflow-y-auto rounded-[2rem] p-6";
+    const title = document.createElement("h2"); title.className = "text-2xl font-black"; title.textContent = language === "es" ? "Personas bloqueadas" : "Blocked people";
+    const description = document.createElement("p"); description.className = "mt-2 text-sm leading-6 text-white/55"; description.textContent = language === "es" ? "Puedes desbloquear a una persona cuando decidas volver a permitirle encontrarte y enviarte mensajes." : "You can unblock someone when you decide to allow them to find and message you again.";
+    const list = document.createElement("div"); list.className = "mt-5 space-y-3";
+    if (!blockedProfiles.length) { const empty = document.createElement("p"); empty.className = "rounded-2xl border border-dashed border-white/15 p-6 text-center text-sm text-white/50"; empty.textContent = language === "es" ? "No has bloqueado a ninguna persona." : "You have not blocked anyone."; list.appendChild(empty); }
+    blockedProfiles.forEach((profile) => { const item = document.createElement("div"); item.className = "flex items-center gap-3 rounded-2xl bg-white/5 p-3"; const avatar = document.createElement("span"); avatar.className = "grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-pink-400 to-violet-600 font-bold"; if (profile.avatarUrl) { const image = document.createElement("img"); image.src = profile.avatarUrl; image.alt = ""; image.className = "size-full object-cover"; avatar.appendChild(image); } else avatar.textContent = profile.name.slice(0, 1).toUpperCase(); const details = document.createElement("span"); details.className = "min-w-0 flex-1"; const name = document.createElement("b"); name.className = "block truncate text-sm"; name.textContent = profile.name; details.appendChild(name); const button = document.createElement("button"); button.className = "rounded-xl border border-white/15 px-3 py-2 text-xs font-bold text-pink-200"; button.textContent = language === "es" ? "Desbloquear" : "Unblock"; button.addEventListener("click", () => void unblockProfile(profile.id)); item.append(avatar, details, button); list.appendChild(item); });
+    const close = document.createElement("button"); close.className = "soft-button mt-5 w-full rounded-xl border border-white/15 bg-white/5 py-3 font-bold"; close.textContent = language === "es" ? "Cerrar" : "Close"; close.addEventListener("click", () => setBlockedListOpen(false));
+    panel.append(title, description, list, close); overlay.appendChild(panel); document.body.appendChild(overlay);
+    return () => overlay.remove();
+  }, [blockedListOpen, blockedProfiles, language]);
+
+  useEffect(() => {
+    if (!accountNotice || accountNotice.notice_type !== "profile_suspended") return;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = Array.from(document.querySelectorAll<HTMLElement>('section[role="dialog"]')).find((element) => element.textContent?.includes(language === "es" ? "Tu perfil fue suspendido" : "Your profile was suspended"));
+      if (!dialog || dialog.querySelector("[data-blynk-appeal-button]")) return;
+      const button = document.createElement("button"); button.dataset.blynkAppealButton = "true"; button.className = "mt-3 w-full text-sm font-bold text-pink-200"; button.textContent = language === "es" ? "Solicitar revisión" : "Request a review"; button.addEventListener("click", () => setAppealOpen(true)); dialog.appendChild(button);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [accountNotice, language]);
+
+  useEffect(() => {
+    if (!appealOpen) return;
+    const overlay = document.createElement("div"); overlay.className = "fixed inset-0 z-[95] grid place-items-center bg-black/80 p-4 backdrop-blur-sm";
+    const panel = document.createElement("section"); panel.className = "blynk-card w-full max-w-md rounded-[2rem] p-6";
+    panel.innerHTML = `<p class="text-xs font-bold uppercase tracking-widest text-pink-300">Blynk Safety</p><h2 class="mt-2 text-2xl font-black">${language === "es" ? "Solicitar revisión" : "Request a review"}</h2><p class="mt-2 text-sm leading-6 text-white/60">${language === "es" ? "Explícanos por qué consideras que la suspensión debe revisarse. Un administrador evaluará tu solicitud." : "Tell us why you believe the suspension should be reviewed. An administrator will review your request."}</p><textarea data-appeal-reason class="mt-5 min-h-32 w-full rounded-xl border border-white/15 bg-black/20 p-3 text-sm text-white outline-none" maxlength="1000" placeholder="${language === "es" ? "Escribe al menos 20 caracteres…" : "Write at least 20 characters…"}"></textarea><button data-submit-appeal disabled class="pink-gradient soft-button mt-4 w-full rounded-xl py-3.5 font-bold disabled:opacity-50">${language === "es" ? "Enviar solicitud" : "Send request"}</button><button data-close-appeal class="mt-3 w-full text-sm font-bold text-white/55">${language === "es" ? "Cancelar" : "Cancel"}</button>`;
+    const textarea = panel.querySelector<HTMLTextAreaElement>("[data-appeal-reason]"); const submit = panel.querySelector<HTMLButtonElement>("[data-submit-appeal]"); const close = panel.querySelector<HTMLButtonElement>("[data-close-appeal]");
+    const update = () => { if (submit && textarea) submit.disabled = textarea.value.trim().length < 20; };
+    textarea?.addEventListener("input", update); submit?.addEventListener("click", () => { if (textarea) void submitAppeal(textarea.value); }); close?.addEventListener("click", () => setAppealOpen(false));
+    overlay.appendChild(panel); document.body.appendChild(overlay); return () => overlay.remove();
+  }, [appealOpen, language]);
+
   return <main className="blynk-shell min-h-screen">
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#090914e8] backdrop-blur-xl"><div className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6"><button onClick={() => setTab("discover")} className="flex items-center gap-2 text-xl font-black tracking-tight"><span aria-hidden="true" className="drop-shadow-[0_0_8px_#f13ab5]"><svg viewBox="0 0 96 58" className="h-7 w-9"><defs><linearGradient id="blynk-mini-eye" x1="0" x2="1"><stop stopColor="#ff4fac"/><stop offset="1" stopColor="#a855f7"/></linearGradient></defs><path d="M3 29C16 11 31 3 48 3s32 8 45 26C80 47 65 55 48 55S16 47 3 29Z" fill="url(#blynk-mini-eye)"/><path d="M13 29C24 18 35 13 48 13s24 5 35 16C72 40 61 45 48 45S24 40 13 29Z" fill="#fff4fb"/><circle cx="48" cy="29" r="11" fill="#18bfc9"/><circle cx="48" cy="29" r="6" fill="#07101e"/><circle cx="44" cy="25" r="2.5" fill="white"/></svg></span><span className="bg-gradient-to-r from-pink-400 to-violet-400 bg-clip-text text-transparent">Blynk</span></button><span aria-label="Ojo Blynk" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 drop-shadow-[0_0_14px_#f13ab5]"><svg viewBox="0 0 96 58" className="h-10 w-16 sm:h-12 sm:w-20" role="img"><defs><linearGradient id="blynk-eye" x1="0" x2="1"><stop stopColor="#ff4fac"/><stop offset="1" stopColor="#a855f7"/></linearGradient><radialGradient id="blynk-iris"><stop stopColor="#d8ffff"/><stop offset=".42" stopColor="#46e4e2"/><stop offset=".72" stopColor="#117f9c"/><stop offset="1" stopColor="#071726"/></radialGradient></defs><path d="M3 29C16 11 31 3 48 3s32 8 45 26C80 47 65 55 48 55S16 47 3 29Z" fill="url(#blynk-eye)"/><path d="M10 29C21 16 34 10 48 10s27 6 38 19C75 42 62 48 48 48S21 42 10 29Z" fill="#fff4fb"/><circle cx="48" cy="29" r="16" fill="url(#blynk-iris)"/><circle cx="48" cy="29" r="8" fill="#07101e"/><circle cx="42" cy="23" r="4" fill="white"/><circle cx="54" cy="35" r="2" fill="#baffff"/></svg></span><div className="flex items-center gap-2"><select aria-label="Idioma" value={language} onChange={(event) => setLanguage(event.target.value as Language)} className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none"><option value="es">ES</option><option value="en">EN</option></select><a href="/login" className="hidden rounded-full border border-white/15 px-4 py-2 text-sm font-bold text-white sm:block">{language === "es" ? "Ingresar" : "Sign in"}</a></div></div></header>
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-4 pb-24 pt-6 md:px-6 lg:grid-cols-[185px_minmax(0,1fr)_260px]">
@@ -786,6 +866,7 @@ export default function BlynkHome() {
     {editingProfile && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><form onSubmit={saveProfile} className="blynk-card max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-[2rem] p-6"><div className="flex items-center justify-between"><h2 className="text-xl font-black">{t.edit} {t.profile}</h2><button type="button" onClick={() => setEditingProfile(false)} className="rounded-full p-2 text-white/60">×</button></div><label className="mt-5 block text-sm font-bold">{language === "es" ? "Nombre" : "Name"}<input value={myProfile.displayName} onChange={(event) => setMyProfile((profile) => ({ ...profile, displayName: event.target.value }))} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none" /></label><label className="mt-4 block text-sm font-bold">{language === "es" ? "Usuario" : "Username"}<input value={myProfile.username} onChange={(event) => setMyProfile((profile) => ({ ...profile, username: event.target.value }))} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none" /></label><label className="mt-4 block text-sm font-bold">{language === "es" ? "Ciudad" : "City"}<input value={myProfile.city} onChange={(event) => setMyProfile((profile) => ({ ...profile, city: event.target.value }))} placeholder={language === "es" ? "Tu ciudad" : "Your city"} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none" /></label><label className="mt-4 block text-sm font-bold">{language === "es" ? "Qué buscas" : "What are you looking for"}<select value={myProfile.connectionIntent} onChange={(event) => setMyProfile((profile) => ({ ...profile, connectionIntent: event.target.value }))} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none"><option value="">{language === "es" ? "Seleccionar" : "Select"}</option><option value="Intentional dating">{language === "es" ? "Citas intencionales" : "Intentional dating"}</option><option value="New friendships">{language === "es" ? "Nuevas amistades" : "New friendships"}</option><option value="Open to meeting people">{language === "es" ? "Conocer personas" : "Open to meeting people"}</option></select></label><fieldset className="mt-4"><legend className="text-sm font-bold">{language === "es" ? "Intereses (hasta 5)" : "Interests (up to 5)"}</legend><div className="mt-2 flex flex-wrap gap-2">{["Art", "Coffee", "Fitness", "Food", "Music", "Movies", "Outdoors", "Travel"].map((interest) => <button key={interest} type="button" onClick={() => setMyProfile((profile) => ({ ...profile, interests: profile.interests.includes(interest) ? profile.interests.filter((value) => value !== interest) : [...profile.interests, interest].slice(0, 5) }))} className={`rounded-full border px-3 py-2 text-xs font-bold ${myProfile.interests.includes(interest) ? "border-pink-400 bg-pink-400/15 text-pink-100" : "border-white/10 bg-white/5 text-white/65"}`}>{interest}</button>)}</div></fieldset><label className="mt-4 block text-sm font-bold">{language === "es" ? "Biografía" : "Bio"}<textarea value={myProfile.bio} onChange={(event) => setMyProfile((profile) => ({ ...profile, bio: event.target.value }))} maxLength={500} className="mt-2 min-h-28 w-full rounded-xl border border-white/15 bg-black/20 p-4 outline-none" /></label><button disabled={savingProfile} className="pink-gradient soft-button mt-5 w-full rounded-xl py-3.5 font-bold disabled:opacity-60">{savingProfile ? (language === "es" ? "Guardando…" : "Saving…") : (language === "es" ? "Guardar cambios" : "Save changes")}</button></form></div>}
     {tab === "profile" && <nav aria-label="Navegación del perfil" className="fixed inset-x-4 bottom-5 z-40 mx-auto flex max-w-xl gap-2 rounded-2xl border border-white/15 bg-[#1b1a2b]/95 p-2 shadow-2xl backdrop-blur lg:bottom-7"><button onClick={() => setTab("discover")} className="flex-1 rounded-xl px-3 py-2 text-xs font-bold text-pink-200 hover:bg-white/10">⌕ {t.discover}</button><button onClick={() => setTab("community")} className="flex-1 rounded-xl px-3 py-2 text-xs font-bold text-pink-200 hover:bg-white/10">◎ {t.community}</button><button onClick={() => setTab("messages")} className="flex-1 rounded-xl px-3 py-2 text-xs font-bold text-pink-200 hover:bg-white/10">✉ {t.messages}</button></nav>}
     {tab === "profile" && <label className="fixed left-4 top-20 z-40 cursor-pointer rounded-full border border-pink-300/30 bg-[#1b1a2b]/95 px-4 py-2 text-xs font-black text-pink-200 shadow-xl backdrop-blur">▧ {language === "es" ? "Foto de fondo" : "Cover photo"}<input onChange={uploadCover} className="hidden" type="file" accept="image/*" /></label>}
+    {tab === "profile" && <button onClick={() => setBlockedListOpen(true)} className="fixed left-4 top-32 z-40 rounded-full border border-white/15 bg-[#1b1a2b]/95 px-4 py-2 text-xs font-black text-white/75 shadow-xl backdrop-blur">⊘ {language === "es" ? `Bloqueados (${blockedProfiles.length})` : `Blocked (${blockedProfiles.length})`}</button>}
     {tab === "profile" && <button onClick={() => setPresentationOpen(true)} className="fixed right-4 top-20 z-40 rounded-full border border-pink-300/30 bg-[#1b1a2b]/95 px-4 py-2 text-xs font-black text-pink-200 shadow-xl backdrop-blur">▶ Video de presentación</button>}
     {presentationOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-label="Video de presentación" className="blynk-card w-full max-w-lg rounded-[2rem] p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-pink-300">Tu perfil</p><h2 className="mt-1 text-2xl font-black">Video de presentación</h2><p className="mt-2 text-sm text-white/55">Este video se mostrará a las personas antes de que decidan enviarte una solicitud.</p></div><button onClick={() => setPresentationOpen(false)} className="rounded-full p-2 text-white/60">×</button></div>{presentationVideo && <video src={presentationVideo} className="mt-5 aspect-video w-full rounded-2xl bg-black object-cover" controls muted playsInline />}<label className="mt-5 flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-pink-300/40 bg-pink-400/5 px-4 py-5 text-sm font-bold text-pink-100">▣ Elegir video<input onChange={selectPresentationVideo} className="hidden" type="file" accept="video/mp4,video/webm,video/quicktime" /></label><button disabled={!presentationVideoFile || uploadingPresentation} onClick={() => void savePresentationVideo()} className="pink-gradient soft-button mt-4 w-full rounded-2xl py-3.5 font-bold disabled:cursor-not-allowed disabled:opacity-50">{uploadingPresentation ? "Subiendo…" : "Publicar como video de presentación"}</button></section></div>}
     {matchRequests.some((request) => request.incoming && request.status === "pending") && <button onClick={() => setReviewingRequest(matchRequests.find((request) => request.incoming && request.status === "pending") || null)} className="fixed left-4 top-20 z-40 rounded-full border border-pink-300/30 bg-[#1b1a2b]/95 px-4 py-2 text-xs font-black text-pink-200 shadow-xl backdrop-blur">♥ Nueva solicitud · Ver perfil</button>}

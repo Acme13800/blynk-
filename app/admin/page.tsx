@@ -6,12 +6,14 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type ReportRow = { id: string; reporter_id: string; target_user_id: string | null; reason: string; created_at: string };
 type ProfileRow = { id: string; display_name: string | null; username: string | null; avatar_url: string | null; city: string | null; suspended_at: string | null };
+type AppealRow = { id: string; user_id: string; reason: string; status: "pending" | "approved" | "denied"; created_at: string };
 
 export default function AdminPage() {
   const [checking, setChecking] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [profiles, setProfiles] = useState<Record<string, ProfileRow>>({});
+  const [appeals, setAppeals] = useState<AppealRow[]>([]);
   const [notice, setNotice] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [email, setEmail] = useState("");
@@ -25,10 +27,14 @@ export default function AdminPage() {
       const { data: reportRows, error: reportError } = await supabase.from("reports").select("id, reporter_id, target_user_id, reason, created_at").not("target_user_id", "is", null).order("created_at", { ascending: false }).limit(100);
       if (reportError) { setNotice(reportError.message); return; }
       const rows = (reportRows || []) as ReportRow[];
-      const ids = [...new Set(rows.map((report) => report.target_user_id).filter(Boolean))] as string[];
+      const { data: appealRows, error: appealError } = await supabase.from("account_appeals").select("id, user_id, reason, status, created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(100);
+      if (appealError) { setNotice(appealError.message); return; }
+      const pendingAppeals = (appealRows || []) as AppealRow[];
+      const ids = [...new Set([...rows.map((report) => report.target_user_id), ...pendingAppeals.map((appeal) => appeal.user_id)].filter(Boolean))] as string[];
       const { data: profileRows, error: profileError } = ids.length ? await supabase.from("profiles").select("id, display_name, username, avatar_url, city, suspended_at").in("id", ids) : { data: [], error: null };
       if (profileError) { setNotice(profileError.message); return; }
       setReports(rows);
+      setAppeals(pendingAppeals);
       setProfiles(Object.fromEntries(((profileRows || []) as ProfileRow[]).map((profile) => [profile.id, profile])));
       if (showFeedback) setNotice(rows.length ? `Queue updated: ${rows.length} report${rows.length === 1 ? "" : "s"} found.` : "Queue updated: there are no reports to review.");
     } finally {
@@ -96,6 +102,25 @@ export default function AdminPage() {
     return () => { summary.remove(); root.querySelectorAll("[data-blynk-priority-label]").forEach((label) => label.remove()); };
   }, [authorized, groupedReports, highPriorityCount]);
 
+  useEffect(() => {
+    if (!authorized) return;
+    const root = document.querySelector("main.blynk-shell .mx-auto.max-w-3xl");
+    if (!root) return;
+    root.querySelector("[data-blynk-appeals]")?.remove();
+    const section = document.createElement("section");
+    section.dataset.blynkAppeals = "true";
+    section.className = "mt-6 rounded-3xl border border-white/10 bg-white/[.03] p-5";
+    const heading = document.createElement("div"); heading.className = "flex items-center justify-between gap-3";
+    const title = document.createElement("h2"); title.className = "font-black"; title.textContent = "Account review requests";
+    const count = document.createElement("span"); count.className = "rounded-full bg-pink-400/15 px-3 py-1 text-xs font-bold text-pink-200"; count.textContent = `${appeals.length} pending`;
+    heading.append(title, count); section.appendChild(heading);
+    if (!appeals.length) { const empty = document.createElement("p"); empty.className = "mt-3 text-sm text-white/50"; empty.textContent = "There are no account review requests."; section.appendChild(empty); }
+    appeals.forEach((appeal) => { const profile = profiles[appeal.user_id]; const card = document.createElement("article"); card.className = "mt-4 rounded-2xl bg-black/20 p-4"; const name = document.createElement("p"); name.className = "font-bold"; name.textContent = profile?.display_name || "Blynk user"; const meta = document.createElement("p"); meta.className = "mt-1 text-xs text-white/45"; meta.textContent = `@${profile?.username || "unknown"} · ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(appeal.created_at))}`; const reason = document.createElement("p"); reason.className = "mt-3 whitespace-pre-wrap text-sm leading-6 text-white/70"; reason.textContent = appeal.reason; const actions = document.createElement("div"); actions.className = "mt-4 flex gap-2"; const deny = document.createElement("button"); deny.className = "rounded-xl border border-white/15 px-4 py-2 text-sm font-bold"; deny.textContent = "Deny"; deny.addEventListener("click", () => void resolveAppeal(appeal, false)); const approve = document.createElement("button"); approve.className = "rounded-xl bg-emerald-400/20 px-4 py-2 text-sm font-bold text-emerald-100"; approve.textContent = "Restore profile"; approve.addEventListener("click", () => void resolveAppeal(appeal, true)); actions.append(deny, approve); card.append(name, meta, reason, actions); section.appendChild(card); });
+    const anchor = root.querySelector("[data-blynk-priority-summary]");
+    if (anchor) anchor.after(section); else root.querySelector("header")?.after(section);
+    return () => section.remove();
+  }, [authorized, appeals, profiles]);
+
   const setSuspension = async (profileId: string, suspended: boolean) => {
     if (!supabase) return;
     const { error } = await supabase.from("profiles").update({ suspended_at: suspended ? new Date().toISOString() : null }).eq("id", profileId);
@@ -109,6 +134,16 @@ export default function AdminPage() {
     }
     setProfiles((items) => ({ ...items, [profileId]: { ...items[profileId], suspended_at: suspended ? new Date().toISOString() : null } }));
     setNotice(suspended ? "Profile suspended. It is now hidden from Discover." : "Profile restored.");
+  };
+  const resolveAppeal = async (appeal: AppealRow, approved: boolean) => {
+    if (!supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    if (approved) await setSuspension(appeal.user_id, false);
+    const { error } = await supabase.from("account_appeals").update({ status: approved ? "approved" : "denied", reviewed_at: new Date().toISOString(), reviewed_by: user.id }).eq("id", appeal.id);
+    if (error) { setNotice(error.message); return; }
+    setAppeals((items) => items.filter((item) => item.id !== appeal.id));
+    setNotice(approved ? "Appeal approved and profile restored." : "Appeal denied.");
   };
 
   if (checking) return <main className="blynk-shell grid min-h-screen place-items-center p-6 text-white/70">Checking administrator access…</main>;
