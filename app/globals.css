@@ -53,6 +53,22 @@ button { cursor: pointer; }
 .blynk-profile-safety-menu button:hover { background: rgb(255 255 255 / .08); }
 .blynk-profile-safety-menu button[data-action="block"] { border-top: 1px solid rgb(255 255 255 / .1); color: #fecdd3; }
 
+/* Compact, accessible profile and safety controls inside an open conversation. */
+.blynk-conversation-tools { display: flex; align-items: center; gap: .45rem; margin-left: auto; padding-left: .5rem; }
+.blynk-conversation-tools > button,
+.blynk-conversation-safety > button { border: 1px solid rgb(255 255 255 / .14); border-radius: .7rem; background: rgb(255 255 255 / .05); color: rgb(255 255 255 / .76); font-size: .72rem; font-weight: 800; padding: .42rem .62rem; }
+.blynk-conversation-safety { position: relative; }
+.blynk-conversation-safety > button { letter-spacing: .08rem; padding-inline: .6rem; }
+.blynk-conversation-safety-menu { display: none; position: absolute; right: 0; top: calc(100% + .45rem); z-index: 25; min-width: 9.2rem; overflow: hidden; border: 1px solid rgb(255 255 255 / .14); border-radius: .85rem; background: rgb(20 18 35 / .98); box-shadow: 0 14px 32px rgb(0 0 0 / .45); }
+.blynk-conversation-tools.is-open .blynk-conversation-safety-menu { display: grid; }
+.blynk-conversation-safety-menu button { border: 0; background: transparent; color: rgb(255 255 255 / .86); font-size: .76rem; font-weight: 800; padding: .7rem .8rem; text-align: left; }
+.blynk-conversation-safety-menu button:hover { background: rgb(255 255 255 / .08); }
+.blynk-conversation-safety-menu button[data-action="block"] { border-top: 1px solid rgb(255 255 255 / .1); color: #fecdd3; }
+
+@media (max-width: 420px) {
+  .blynk-conversation-tools > button { max-width: 5.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
 /* Polished language control used in the app header. */
 select.blynk-language-native {
   display: none;

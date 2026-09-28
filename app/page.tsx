@@ -275,6 +275,40 @@ export default function BlynkHome() {
     setChat(loadedMessages);
     setActiveMatch(request);
   };
+  const openConversationProfile = async () => {
+    if (!activeMatch) return;
+    const fallback: DiscoverPerson = { id: activeMatch.otherId, name: activeMatch.otherName, age: 18, place: language === "es" ? "Ciudad no especificada" : "City not specified", emoji: "✦", accent: "from-pink-500 via-fuchsia-600 to-violet-700", intro: activeMatch.otherBio || (language === "es" ? "Esta persona aún no añadió una biografía." : "This person has not added a bio yet."), tags: [], intent: "", video: activeMatch.otherVideoUrl || "", avatarUrl: activeMatch.otherAvatarUrl || "" };
+    setViewingProfile({ person: fallback, media: [] });
+    if (!supabase) return;
+    const [{ data: profile }, { data: gallery }] = await Promise.all([
+      supabase.from("profiles").select("display_name, bio, avatar_url, presentation_video_url, city, birth_date, interests, connection_intent").eq("id", activeMatch.otherId).maybeSingle(),
+      supabase.from("profile_media").select("media_url").eq("user_id", activeMatch.otherId).order("created_at", { ascending: true }).limit(6),
+    ]);
+    if (!profile) return;
+    setViewingProfile({ person: { ...fallback, name: profile.display_name || fallback.name, age: profileAge(profile.birth_date), place: profile.city || fallback.place, intro: profile.bio || fallback.intro, tags: profile.interests?.length ? profile.interests : [], intent: profile.connection_intent || "", video: profile.presentation_video_url || "", avatarUrl: profile.avatar_url || "" }, media: (gallery || []).map((item) => item.media_url) });
+  };
+  const reportConversationProfile = async () => {
+    if (!activeMatch || !supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { notify(language === "es" ? "Inicia sesión para reportar perfiles." : "Sign in to report profiles."); return; }
+    if (!window.confirm(language === "es" ? "¿Enviar un reporte sobre este perfil?" : "Send a report about this profile?")) return;
+    const { error } = await supabase.from("reports").insert({ reporter_id: user.id, target_user_id: activeMatch.otherId, reason: "Report from messages" });
+    if (error) { notify(error.message); return; }
+    notify(language === "es" ? "Reporte enviado. Revisaremos el caso." : "Report sent. We will review it.");
+  };
+  const blockConversationProfile = async () => {
+    if (!activeMatch || !supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { notify(language === "es" ? "Inicia sesión para bloquear perfiles." : "Sign in to block profiles."); return; }
+    if (!window.confirm(language === "es" ? "¿Bloquear a esta persona? Ya no podrá encontrarte ni enviarte mensajes." : "Block this person? They will no longer be able to find or message you.")) return;
+    const { error } = await supabase.from("blocks").upsert({ blocker_id: user.id, blocked_id: activeMatch.otherId }, { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true });
+    if (error) { notify(error.message); return; }
+    setMatchRequests((items) => items.filter((item) => item.otherId !== activeMatch.otherId));
+    setInboxMatchIds((items) => items.filter((id) => id !== activeMatch.otherId));
+    setActiveMatch(null);
+    setChat([]);
+    notify(language === "es" ? "Persona bloqueada y conversación cerrada." : "Person blocked and conversation closed.");
+  };
   const selectPresentationVideo = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -424,6 +458,31 @@ export default function BlynkHome() {
     blockButton?.addEventListener("click", block);
     return () => { control.remove(); };
   }, [tab, person?.id, language]);
+  // Conversation actions remain in the header so safety tools are always available while messaging.
+  useEffect(() => {
+    const history = document.querySelector<HTMLElement>(".no-scrollbar");
+    const header = history?.previousElementSibling as HTMLElement | null;
+    if (!header || tab !== "messages" || !activeMatch) return;
+    header.querySelector("[data-blynk-conversation-tools]")?.remove();
+    const tools = document.createElement("div");
+    tools.dataset.blynkConversationTools = "true";
+    tools.className = "blynk-conversation-tools";
+    tools.innerHTML = `<button type="button" data-action="profile">${language === "es" ? "Ver perfil" : "View profile"}</button><div class="blynk-conversation-safety"><button type="button" data-action="menu" aria-label="${language === "es" ? "Opciones de seguridad" : "Safety options"}">•••</button><div class="blynk-conversation-safety-menu"><button type="button" data-action="report">⚑ ${language === "es" ? "Reportar" : "Report"}</button><button type="button" data-action="block">⊘ ${language === "es" ? "Bloquear" : "Block"}</button></div></div>`;
+    header.appendChild(tools);
+    const profileButton = tools.querySelector<HTMLButtonElement>('[data-action="profile"]');
+    const menuButton = tools.querySelector<HTMLButtonElement>('[data-action="menu"]');
+    const reportButton = tools.querySelector<HTMLButtonElement>('[data-action="report"]');
+    const blockButton = tools.querySelector<HTMLButtonElement>('[data-action="block"]');
+    const profile = () => void openConversationProfile();
+    const menu = () => tools.classList.toggle("is-open");
+    const report = () => { tools.classList.remove("is-open"); void reportConversationProfile(); };
+    const block = () => { tools.classList.remove("is-open"); void blockConversationProfile(); };
+    profileButton?.addEventListener("click", profile);
+    menuButton?.addEventListener("click", menu);
+    reportButton?.addEventListener("click", report);
+    blockButton?.addEventListener("click", block);
+    return () => tools.remove();
+  }, [tab, activeMatch?.otherId, language]);
   // Make the visible “Next” control a real discard, even when its compact card is re-rendered.
   useEffect(() => { const onSkipClick = (event: MouseEvent) => { const button = (event.target as HTMLElement).closest("button"); if (button?.textContent?.includes(`× ${t.skip}`)) { event.preventDefault(); event.stopPropagation(); void skipProfile(); } }; document.addEventListener("click", onSkipClick, true); return () => document.removeEventListener("click", onSkipClick, true); }, [language, person?.id]);
   // The request control lives in the video card; this listener keeps that control usable for dynamic profiles.
