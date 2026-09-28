@@ -77,6 +77,7 @@ export default function BlynkHome() {
   const [accountSuspended, setAccountSuspended] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   const [latestAppealResponse, setLatestAppealResponse] = useState("");
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [blockedProfiles, setBlockedProfiles] = useState<BlockedProfile[]>([]);
   const [blockedListOpen, setBlockedListOpen] = useState(false);
   const [appealOpen, setAppealOpen] = useState(false);
@@ -97,6 +98,16 @@ export default function BlynkHome() {
   const hasReceivedMessage = chat.some((item) => item.from !== "me");
 
   const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
+  const sendBrowserNotification = (title: string, body: string, openMessages = false) => {
+    if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "granted") return;
+    const notification = new Notification(title, { body, tag: `blynk-${title}` });
+    notification.onclick = () => { window.focus(); if (openMessages) setTab("messages"); notification.close(); };
+  };
+  const requestBrowserNotifications = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) { notify(language === "es" ? "Este navegador no admite notificaciones." : "This browser does not support notifications."); return; }
+    const permission = await Notification.requestPermission(); setNotificationPermission(permission);
+    notify(permission === "granted" ? (language === "es" ? "Notificaciones activadas." : "Notifications enabled.") : (language === "es" ? "No se activaron las notificaciones. Puedes cambiarlas en los ajustes del navegador." : "Notifications were not enabled. You can change this in browser settings."));
+  };
   const validateMediaFile = (file: File) => {
     const allowedImages = ["image/jpeg", "image/png", "image/webp"];
     const allowedVideos = ["video/mp4", "video/webm", "video/quicktime"];
@@ -631,6 +642,10 @@ export default function BlynkHome() {
     void loadRegisteredPeople();
   }, [language]);
   useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    setNotificationPermission(Notification.permission);
+  }, []);
+  useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     const client = supabase;
     async function loadBlockedProfiles() {
@@ -663,6 +678,7 @@ export default function BlynkHome() {
           const { data: sender } = await client.from("profiles").select("display_name").eq("id", messageRow.sender_id).maybeSingle();
           const name = sender?.display_name || (language === "es" ? "Tu match" : "Your match");
           setIncomingAlert({ name, hasMedia: Boolean(messageRow.media_type) });
+          sendBrowserNotification(`Blynk · ${name}`, messageRow.media_type ? (language === "es" ? "Te envió una foto o video" : "Sent you a photo or video") : (language === "es" ? "Te envió un mensaje" : "Sent you a message"), true);
           window.setTimeout(() => setIncomingAlert(null), 6000);
           if (activeMatch?.otherId === messageRow.sender_id) {
             setChat((items) => [...items, { id: messageRow.id, from: name, text: messageRow.content || "", mediaUrl: messageRow.media_url || undefined, mediaType: messageRow.media_type || undefined, createdAt: messageRow.created_at }]);
@@ -676,14 +692,30 @@ export default function BlynkHome() {
         })
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "match_requests", filter: `recipient_id=eq.${user.id}` }, () => {
           notify(language === "es" ? "Tienes una nueva solicitud de match." : "You have a new match request.");
+          sendBrowserNotification("Blynk", language === "es" ? "Tienes una nueva solicitud de match." : "You have a new match request.", false);
           void loadMatches();
         })
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "match_requests", filter: `recipient_id=eq.${user.id}` }, () => { void loadMatches(); })
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "account_notices", filter: `user_id=eq.${user.id}` }, (payload) => {
+          const safety = payload.new as { notice_type?: string };
+          const message = safety.notice_type === "profile_restored" ? (language === "es" ? "Tu perfil fue restaurado." : "Your profile was restored.") : safety.notice_type === "appeal_denied" ? (language === "es" ? "Tu solicitud de revisión no fue aprobada." : "Your review request was not approved.") : (language === "es" ? "Hay una actualización sobre la seguridad de tu cuenta." : "There is an update about your account safety.");
+          sendBrowserNotification("Blynk Safety", message, false);
+        })
         .subscribe();
     }
     void connectRealtime();
     return () => { if (channel) void client.removeChannel(channel); };
   }, [language, activeMatch?.otherId]);
+  useEffect(() => {
+    if (tab !== "profile") return;
+    const root = document.querySelector("main.blynk-shell"); const accountCard = Array.from(root?.querySelectorAll<HTMLElement>("article") || []).find((article) => article.textContent?.includes(language === "es" ? "Privacidad y cuenta" : "Privacy and account"));
+    if (!root || !accountCard || root.querySelector("[data-blynk-notifications-card]")) return;
+    const card = document.createElement("section"); card.dataset.blynkNotificationsCard = "true"; card.className = "blynk-card mt-4 rounded-3xl p-5";
+    const supported = notificationPermission !== "unsupported"; const enabled = notificationPermission === "granted";
+    card.innerHTML = `<div class="flex items-start justify-between gap-4"><div><h2 class="font-black">${language === "es" ? "Notificaciones" : "Notifications"}</h2><p class="mt-2 text-sm leading-6 text-white/55">${enabled ? (language === "es" ? "Recibirás avisos de mensajes, matches y seguridad mientras Blynk esté abierto." : "You will receive alerts for messages, matches, and safety while Blynk is open.") : (language === "es" ? "Activa los avisos del navegador para no perder mensajes y solicitudes." : "Enable browser alerts so you do not miss messages and requests.")}</p></div><span class="rounded-full px-3 py-1 text-xs font-bold ${enabled ? "bg-emerald-400/15 text-emerald-100" : "bg-white/10 text-white/60"}">${enabled ? (language === "es" ? "Activo" : "On") : (language === "es" ? "Desactivado" : "Off")}</span></div>${supported && !enabled ? `<button data-enable-blynk-notifications class="mt-4 w-full rounded-xl border border-pink-300/30 bg-pink-400/10 py-3 text-sm font-bold text-pink-100">${language === "es" ? "Activar notificaciones" : "Enable notifications"}</button>` : ""}`;
+    const button = card.querySelector<HTMLButtonElement>("[data-enable-blynk-notifications]"); const enable = () => void requestBrowserNotifications(); button?.addEventListener("click", enable); accountCard.after(card);
+    return () => { button?.removeEventListener("click", enable); card.remove(); };
+  }, [tab, language, notificationPermission]);
   useEffect(() => {
     const sentMessages = chat.filter((item) => item.from === "me");
     const bubbles = Array.from(document.querySelectorAll<HTMLDivElement>("div.pink-gradient.ml-auto"));
