@@ -73,6 +73,7 @@ export default function BlynkHome() {
   const [safetyAction, setSafetyAction] = useState<SafetyAction | null>(null);
   const [safetyReason, setSafetyReason] = useState("");
   const [accountNotice, setAccountNotice] = useState<AccountNotice | null>(null);
+  const [accountSuspended, setAccountSuspended] = useState(false);
   const [myProfile, setMyProfile] = useState({ displayName: "", username: "", bio: "", email: "", avatarUrl: "", coverUrl: "", presentationVideoUrl: "", city: "", connectionIntent: "", interests: [] as string[] });
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -93,6 +94,11 @@ export default function BlynkHome() {
     setSafetyReason("");
     setSafetyAction(action);
   };
+  const requireActiveAccount = () => {
+    if (!accountSuspended) return true;
+    notify(language === "es" ? "Tu cuenta está suspendida mientras se revisa. No puedes realizar esta acción." : "Your account is suspended while under review. You cannot perform this action.");
+    return false;
+  };
   const dismissAccountNotice = async () => {
     if (!accountNotice || !supabase) return;
     const notice = accountNotice;
@@ -103,6 +109,7 @@ export default function BlynkHome() {
   const nextPerson = () => setPersonIndex((value) => (value + 1) % discoverPeople.length);
   const toggleProfileLike = async (event: React.MouseEvent) => {
     event.stopPropagation();
+    if (!requireActiveAccount()) return;
     if (!supabase || person.id.length < 20) { notify(language === "es" ? "Inicia sesión para dar me gusta." : "Sign in to like profiles."); return; }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { notify(language === "es" ? "Inicia sesión para dar me gusta." : "Sign in to like profiles."); return; }
@@ -140,6 +147,7 @@ export default function BlynkHome() {
   const onTouchStart = (event: React.TouchEvent) => { startY.current = event.touches[0].clientY; };
   const onTouchEnd = (event: React.TouchEvent) => { if (startY.current - event.changedTouches[0].clientY > 55) void skipProfile(); };
   const addPost = async () => {
+    if (!requireActiveAccount()) return;
     if ((!postText.trim() && !postVideo) || uploadingPost) return;
     let publishedVideo = postVideo;
     setUploadingPost(true);
@@ -161,6 +169,7 @@ export default function BlynkHome() {
     notify(language === "es" ? "Publicación compartida" : "Post shared");
   };
   const addComment = async (postId: string | number) => {
+    if (!requireActiveAccount()) return;
     const content = comment.trim();
     if (!content) return;
     if (isSupabaseConfigured && supabase && typeof postId === "string") {
@@ -226,6 +235,7 @@ export default function BlynkHome() {
     setInboxPreviews(previewById);
   };
   const requestMatch = async () => {
+    if (!requireActiveAccount()) return;
     if (!registeredPeople.length) { notify(language === "es" ? "Para solicitar un match, crea una segunda cuenta de prueba o espera a que haya otros perfiles registrados." : "To request a match, create a second test account or wait for other registered profiles."); return; }
     if (!isSupabaseConfigured || !supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
@@ -237,6 +247,7 @@ export default function BlynkHome() {
     notify(t.matched); void loadMatches();
   };
   const respondToMatch = async (request: MatchRequest, status: "accepted" | "rejected") => {
+    if (!requireActiveAccount()) return;
     if (!supabase) return;
     const { error } = await supabase.from("match_requests").update({ status, responded_at: new Date().toISOString() }).eq("id", request.id);
     if (error) { notify(error.message); return; }
@@ -403,6 +414,7 @@ export default function BlynkHome() {
   };
   const sendMessage = async (event: FormEvent) => {
     event.preventDefault();
+    if (!requireActiveAccount()) return;
     const content = message.trim();
     if ((!content && !messageMediaFile) || !activeMatch || !supabase || sendingMessage) return;
     const { data: { user } } = await supabase.auth.getUser();
@@ -507,10 +519,11 @@ export default function BlynkHome() {
     async function loadMyProfile() {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return;
-      const { data } = await client.from("profiles").select("display_name, username, bio, avatar_url, cover_url, presentation_video_url, city, connection_intent, interests, onboarding_completed").eq("id", user.id).maybeSingle();
+      const { data } = await client.from("profiles").select("display_name, username, bio, avatar_url, cover_url, presentation_video_url, city, connection_intent, interests, onboarding_completed, suspended_at").eq("id", user.id).maybeSingle();
       if (!data?.onboarding_completed && !data?.bio) { router.replace("/onboarding"); return; }
       setMyProfile({ displayName: data?.display_name || user.user_metadata.display_name || user.email?.split("@")[0] || "Blynk user", username: data?.username || "", bio: data?.bio || "", email: user.email || "", avatarUrl: data?.avatar_url || "", coverUrl: data?.cover_url || "", presentationVideoUrl: data?.presentation_video_url || "", city: data?.city || "", connectionIntent: data?.connection_intent || "", interests: data?.interests || [] });
       setPresentationVideo(data?.presentation_video_url || "");
+      setAccountSuspended(Boolean(data?.suspended_at));
       const { data: gallery } = await client.from("profile_media").select("media_url").eq("user_id", user.id).order("created_at", { ascending: true }).limit(6);
       if (gallery) setMedia(gallery.map((item) => item.media_url));
     }
