@@ -96,6 +96,15 @@ export default function BlynkHome() {
   const hasReceivedMessage = chat.some((item) => item.from !== "me");
 
   const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
+  const validateMediaFile = (file: File) => {
+    const allowedImages = ["image/jpeg", "image/png", "image/webp"];
+    const allowedVideos = ["video/mp4", "video/webm", "video/quicktime"];
+    const allowed = [...allowedImages, ...allowedVideos];
+    if (!allowed.includes(file.type)) { notify(language === "es" ? "Formato no permitido. Usa JPG, PNG, WebP, MP4, WebM o MOV." : "Unsupported format. Use JPG, PNG, WebP, MP4, WebM, or MOV."); return false; }
+    const maxBytes = file.type.startsWith("video/") ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > maxBytes) { notify(file.type.startsWith("video/") ? (language === "es" ? "Los videos deben pesar menos de 15 MB." : "Videos must be under 15 MB.") : (language === "es" ? "Las fotos deben pesar menos de 10 MB." : "Photos must be under 10 MB.")); return false; }
+    return true;
+  };
   const beginSafetyAction = (action: SafetyAction) => {
     if (action.targetId.length < 20) { notify(language === "es" ? "Este es un perfil de demostración. Usa una cuenta registrada para probar esta función." : "This is a demo profile. Use a registered account to test this feature."); return; }
     setSafetyReason("");
@@ -360,6 +369,7 @@ export default function BlynkHome() {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("video/")) { notify(language === "es" ? "Elige un archivo de video." : "Choose a video file."); return; }
+    if (!validateMediaFile(file)) return;
     setPresentationVideoFile(file);
     setPresentationVideo(URL.createObjectURL(file));
   };
@@ -385,6 +395,7 @@ export default function BlynkHome() {
     const file = event.target.files?.[0];
     if (!file || !supabase) return;
     if (!file.type.startsWith("image/")) { notify(language === "es" ? "Elige una imagen para tu foto de perfil." : "Choose an image for your profile photo."); return; }
+    if (!validateMediaFile(file)) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { notify(language === "es" ? "Inicia sesión para cambiar tu foto." : "Sign in to change your photo."); return; }
     const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
@@ -400,6 +411,7 @@ export default function BlynkHome() {
   const uploadCover = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !supabase || !file.type.startsWith("image/")) { notify(language === "es" ? "Elige una imagen para el fondo." : "Choose an image for the cover."); return; }
+    if (!validateMediaFile(file)) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { notify(language === "es" ? "Inicia sesión para cambiar el fondo." : "Sign in to change your cover."); return; }
     const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
@@ -413,7 +425,7 @@ export default function BlynkHome() {
     notify(language === "es" ? "Foto de fondo actualizada." : "Cover photo updated.");
   };
   const uploadMedia = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
+    const files = Array.from(event.target.files ?? []).filter((file) => (file.type.startsWith("image/") || file.type.startsWith("video/")) && validateMediaFile(file));
     if (!files.length || !supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { notify(language === "es" ? "Inicia sesión para agregar contenido." : "Sign in to add media."); return; }
@@ -432,11 +444,12 @@ export default function BlynkHome() {
     }
     if (uploaded.length) { setMedia((current) => [...current, ...uploaded]); notify(language === "es" ? "Galería actualizada." : "Gallery updated."); }
   };
-  const selectPostVideo = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) { setPostVideoFile(file); setPostVideo(URL.createObjectURL(file)); } };
+  const selectPostVideo = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file && validateMediaFile(file) && file.type.startsWith("video/")) { setPostVideoFile(file); setPostVideo(URL.createObjectURL(file)); } };
   const selectMessageMedia = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) { notify(language === "es" ? "Elige una foto o video." : "Choose a photo or video."); return; }
+    if (!validateMediaFile(file)) return;
     if (file.size > 20 * 1024 * 1024) { notify(language === "es" ? "El archivo debe pesar menos de 20 MB." : "The file must be under 20 MB."); return; }
     if (file.type.startsWith("video/") && file.size > 15 * 1024 * 1024) { notify(language === "es" ? "Los videos deben pesar menos de 15 MB." : "Videos must be under 15 MB."); return; }
     setMessageMediaFile(file); setMessageMediaPreview(URL.createObjectURL(file));
