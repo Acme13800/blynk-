@@ -52,6 +52,8 @@ export default function AdminPage() {
     if (!supabase) return;
     const { error } = await supabase.from("profiles").update({ suspended_at: suspended ? new Date().toISOString() : null }).eq("id", profileId);
     if (error) { setNotice(error.message); return; }
+    const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: profileId, notice_type: suspended ? "profile_suspended" : "profile_restored" });
+    if (noticeError) { setNotice(`Profile updated, but the notice could not be sent: ${noticeError.message}`); return; }
     setProfiles((items) => ({ ...items, [profileId]: { ...items[profileId], suspended_at: suspended ? new Date().toISOString() : null } }));
     setNotice(suspended ? "Profile suspended. It is now hidden from Discover." : "Profile restored.");
   };

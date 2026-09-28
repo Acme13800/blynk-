@@ -15,6 +15,8 @@ type ChatMessage = { id: string; from: string; text: string; createdAt: string; 
 type InboxPreview = { content: string; createdAt: string; unread: boolean };
 type DiscoverPerson = { id: string; name: string; age: number; place: string; emoji: string; accent: string; intro: string; tags: string[]; intent?: string; video: string; avatarUrl?: string; likeCount?: number; likedByMe?: boolean };
 type MatchRequest = { id: string; otherId: string; otherName: string; otherBio?: string; otherAvatarUrl?: string; otherVideoUrl?: string; incoming: boolean; status: "pending" | "accepted" | "rejected" };
+type SafetyAction = { kind: "report" | "block"; targetId: string; targetName: string; closeConversation?: boolean };
+type AccountNotice = { id: string; notice_type: "profile_suspended" | "profile_restored" };
 
 const people: DiscoverPerson[] = [
   { id: "sofia", name: "Sofía", age: 24, place: "Ciudad de México", emoji: "☕", accent: "from-orange-400 via-rose-500 to-violet-700", intro: "Una caminata, un café y una conversación sin prisa.", tags: ["Travel", "Photography", "Coffee"], intent: "Intentional dating", video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
@@ -68,6 +70,9 @@ export default function BlynkHome() {
   const [presentationVideo, setPresentationVideo] = useState("");
   const [presentationVideoFile, setPresentationVideoFile] = useState<File | null>(null);
   const [uploadingPresentation, setUploadingPresentation] = useState(false);
+  const [safetyAction, setSafetyAction] = useState<SafetyAction | null>(null);
+  const [safetyReason, setSafetyReason] = useState("");
+  const [accountNotice, setAccountNotice] = useState<AccountNotice | null>(null);
   const [myProfile, setMyProfile] = useState({ displayName: "", username: "", bio: "", email: "", avatarUrl: "", coverUrl: "", presentationVideoUrl: "", city: "", connectionIntent: "", interests: [] as string[] });
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -83,6 +88,17 @@ export default function BlynkHome() {
   const hasReceivedMessage = chat.some((item) => item.from !== "me");
 
   const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
+  const beginSafetyAction = (action: SafetyAction) => {
+    if (action.targetId.length < 20) { notify(language === "es" ? "Este es un perfil de demostración. Usa una cuenta registrada para probar esta función." : "This is a demo profile. Use a registered account to test this feature."); return; }
+    setSafetyReason("");
+    setSafetyAction(action);
+  };
+  const dismissAccountNotice = async () => {
+    if (!accountNotice || !supabase) return;
+    const notice = accountNotice;
+    setAccountNotice(null);
+    await supabase.from("account_notices").update({ read_at: new Date().toISOString() }).eq("id", notice.id);
+  };
   const messageTime = (date: string) => new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(date));
   const nextPerson = () => setPersonIndex((value) => (value + 1) % discoverPeople.length);
   const toggleProfileLike = async (event: React.MouseEvent) => {
@@ -109,29 +125,11 @@ export default function BlynkHome() {
   };
   const blockProfile = async () => {
     if (!person) return;
-    if (!supabase || person.id.length < 20) {
-      notify(language === "es" ? "Este es un perfil de demostración. Para probar bloqueos, usa una segunda cuenta registrada." : "This is a demo profile. To test blocking, use a second registered account.");
-      return;
-    }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { notify(language === "es" ? "Inicia sesión para bloquear perfiles." : "Sign in to block profiles."); return; }
-    const { error } = await supabase.from("blocks").upsert({ blocker_id: user.id, blocked_id: person.id }, { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true });
-    if (error) { notify(language === "es" ? `No se pudo bloquear el perfil: ${error.message}` : `Could not block this profile: ${error.message}`); return; }
-    setRegisteredPeople((profiles) => profiles.filter((profile) => profile.id !== person.id));
-    setPersonIndex(0);
-    notify(language === "es" ? "Perfil bloqueado. No volverá a aparecer." : "Profile blocked. It will not appear again.");
+    beginSafetyAction({ kind: "block", targetId: person.id, targetName: person.name });
   };
   const reportProfile = async () => {
     if (!person) return;
-    if (!supabase || person.id.length < 20) {
-      notify(language === "es" ? "Este es un perfil de demostración. Para probar reportes, usa una segunda cuenta registrada." : "This is a demo profile. To test reporting, use a second registered account.");
-      return;
-    }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { notify(language === "es" ? "Inicia sesión para reportar perfiles." : "Sign in to report profiles."); return; }
-    const { error } = await supabase.from("reports").insert({ reporter_id: user.id, target_user_id: person.id, reason: "Profile report from Discover" });
-    if (error) { notify(language === "es" ? `No se pudo enviar el reporte: ${error.message}` : `Could not send report: ${error.message}`); return; }
-    notify(language === "es" ? "Reporte enviado. Gracias por ayudarnos a cuidar la comunidad." : "Report sent. Thanks for helping keep the community safe.");
+    beginSafetyAction({ kind: "report", targetId: person.id, targetName: person.name });
   };
   const openPublicProfile = async (selected: DiscoverPerson) => {
     setViewingProfile({ person: selected, media: [] });
@@ -288,26 +286,35 @@ export default function BlynkHome() {
     setViewingProfile({ person: { ...fallback, name: profile.display_name || fallback.name, age: profileAge(profile.birth_date), place: profile.city || fallback.place, intro: profile.bio || fallback.intro, tags: profile.interests?.length ? profile.interests : [], intent: profile.connection_intent || "", video: profile.presentation_video_url || "", avatarUrl: profile.avatar_url || "" }, media: (gallery || []).map((item) => item.media_url) });
   };
   const reportConversationProfile = async () => {
-    if (!activeMatch || !supabase) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { notify(language === "es" ? "Inicia sesión para reportar perfiles." : "Sign in to report profiles."); return; }
-    if (!window.confirm(language === "es" ? "¿Enviar un reporte sobre este perfil?" : "Send a report about this profile?")) return;
-    const { error } = await supabase.from("reports").insert({ reporter_id: user.id, target_user_id: activeMatch.otherId, reason: "Report from messages" });
-    if (error) { notify(error.message); return; }
-    notify(language === "es" ? "Reporte enviado. Revisaremos el caso." : "Report sent. We will review it.");
+    if (!activeMatch) return;
+    beginSafetyAction({ kind: "report", targetId: activeMatch.otherId, targetName: activeMatch.otherName, closeConversation: true });
   };
   const blockConversationProfile = async () => {
-    if (!activeMatch || !supabase) return;
+    if (!activeMatch) return;
+    beginSafetyAction({ kind: "block", targetId: activeMatch.otherId, targetName: activeMatch.otherName, closeConversation: true });
+  };
+  const submitSafetyAction = async () => {
+    if (!safetyAction || !safetyReason || !supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { notify(language === "es" ? "Inicia sesión para bloquear perfiles." : "Sign in to block profiles."); return; }
-    if (!window.confirm(language === "es" ? "¿Bloquear a esta persona? Ya no podrá encontrarte ni enviarte mensajes." : "Block this person? They will no longer be able to find or message you.")) return;
-    const { error } = await supabase.from("blocks").upsert({ blocker_id: user.id, blocked_id: activeMatch.otherId }, { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true });
+    if (!user) { notify(language === "es" ? "Inicia sesión para continuar." : "Sign in to continue."); return; }
+    const { kind, targetId, closeConversation } = safetyAction;
+    const { error } = kind === "report"
+      ? await supabase.from("reports").insert({ reporter_id: user.id, target_user_id: targetId, reason: safetyReason })
+      : await supabase.from("blocks").upsert({ blocker_id: user.id, blocked_id: targetId, reason: safetyReason }, { onConflict: "blocker_id,blocked_id" });
     if (error) { notify(error.message); return; }
-    setMatchRequests((items) => items.filter((item) => item.otherId !== activeMatch.otherId));
-    setInboxMatchIds((items) => items.filter((id) => id !== activeMatch.otherId));
-    setActiveMatch(null);
-    setChat([]);
-    notify(language === "es" ? "Persona bloqueada y conversación cerrada." : "Person blocked and conversation closed.");
+    if (kind === "block") {
+      setRegisteredPeople((profiles) => profiles.filter((profile) => profile.id !== targetId));
+      setPersonIndex(0);
+      if (closeConversation) {
+        setMatchRequests((items) => items.filter((item) => item.otherId !== targetId));
+        setInboxMatchIds((items) => items.filter((id) => id !== targetId));
+        setActiveMatch(null);
+        setChat([]);
+      }
+    }
+    setSafetyAction(null);
+    setSafetyReason("");
+    notify(kind === "block" ? (language === "es" ? "Persona bloqueada. No volverá a aparecer." : "Person blocked. They will not appear again.") : (language === "es" ? "Reporte enviado. Gracias por ayudarnos a cuidar Blynk." : "Report sent. Thanks for helping keep Blynk safe."));
   };
   const selectPresentationVideo = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -508,6 +515,17 @@ export default function BlynkHome() {
       if (gallery) setMedia(gallery.map((item) => item.media_url));
     }
     void loadMyProfile();
+  }, []);
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const client = supabase;
+    async function loadAccountNotice() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      const { data } = await client.from("account_notices").select("id, notice_type").eq("user_id", user.id).is("read_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (data) setAccountNotice(data as AccountNotice);
+    }
+    void loadAccountNotice();
   }, []);
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -742,6 +760,8 @@ export default function BlynkHome() {
     </div>
     <nav className="mobile-safe fixed inset-x-0 bottom-0 z-30 flex justify-around border-t border-white/10 bg-[#0b0b17ef] px-3 py-2 backdrop-blur-xl lg:hidden">{([ ["discover", "▷"], ["community", "◎"], ["messages", "✉"], ["profile", "◌"] ] as [Tab, string][]).map(([key, icon]) => <button key={key} onClick={() => setTab(key)} className={`grid place-items-center gap-1 px-2 py-1 text-[10px] font-bold ${tab === key ? "text-pink-300" : "text-white/45"}`}><span className="text-xl">{icon}</span>{t[key]}</button>)}</nav>
     {incomingAlert && <button onClick={() => { setTab("messages"); setIncomingAlert(null); }} className="fixed left-1/2 top-20 z-[70] flex w-[min(92vw,380px)] -translate-x-1/2 items-center gap-3 rounded-2xl border border-pink-300/35 bg-[#19162af5] p-3 text-left shadow-[0_16px_50px_#000a] backdrop-blur-xl"><span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-400 to-violet-500 text-xl shadow-[0_0_20px_#f13ab599]">◉</span><span className="min-w-0"><b className="block text-sm text-pink-100">Blynk · {incomingAlert.name}</b><small className="mt-0.5 block truncate text-white/65">{incomingAlert.hasMedia ? (language === "es" ? "Te envió una foto o video" : "Sent you a photo or video") : (language === "es" ? "Te envió un mensaje" : "Sent you a message")}</small></span><span className="ml-auto text-xs text-pink-200">›</span></button>}
+    {safetyAction && <div className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><form onSubmit={(event) => { event.preventDefault(); void submitSafetyAction(); }} className="blynk-card w-full max-w-md rounded-[2rem] p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-pink-300">Blynk Safety</p><h2 className="mt-1 text-2xl font-black">{safetyAction.kind === "report" ? (language === "es" ? "Reportar perfil" : "Report profile") : (language === "es" ? "Bloquear perfil" : "Block profile")}</h2><p className="mt-2 text-sm text-white/60">{safetyAction.targetName}</p></div><button type="button" onClick={() => setSafetyAction(null)} className="rounded-full p-2 text-white/60">×</button></div><label className="mt-6 block text-sm font-bold">{language === "es" ? "¿Cuál es el motivo?" : "What is the reason?"}<select required value={safetyReason} onChange={(event) => setSafetyReason(event.target.value)} className="mt-2 w-full rounded-xl border border-white/15 bg-[#151525] px-4 py-3 text-white outline-none"><option value="">{language === "es" ? "Selecciona un motivo" : "Select a reason"}</option><option value="Harassment or abusive behavior">{language === "es" ? "Acoso o comportamiento abusivo" : "Harassment or abusive behavior"}</option><option value="Inappropriate content">{language === "es" ? "Contenido inapropiado" : "Inappropriate content"}</option><option value="Spam or scam">{language === "es" ? "Spam o posible estafa" : "Spam or scam"}</option><option value="Impersonation or fake profile">{language === "es" ? "Suplantación o perfil falso" : "Impersonation or fake profile"}</option><option value="Underage concern">{language === "es" ? "Posible persona menor de edad" : "Underage concern"}</option><option value="I no longer want contact">{language === "es" ? "No deseo seguir en contacto" : "I no longer want contact"}</option><option value="Other safety concern">{language === "es" ? "Otra preocupación de seguridad" : "Other safety concern"}</option></select></label><p className="mt-3 text-xs leading-5 text-white/50">{safetyAction.kind === "report" ? (language === "es" ? "El reporte será revisado por el equipo de Blynk." : "The report will be reviewed by the Blynk team.") : (language === "es" ? "La persona no recibirá el motivo. Dejará de aparecer y de poder enviarte mensajes." : "The person will not see the reason. They will no longer appear or be able to message you.")}</p><button disabled={!safetyReason} className={`soft-button mt-5 w-full rounded-xl py-3.5 font-bold disabled:opacity-50 ${safetyAction.kind === "block" ? "bg-rose-500/80" : "pink-gradient"}`}>{safetyAction.kind === "report" ? (language === "es" ? "Enviar reporte" : "Send report") : (language === "es" ? "Confirmar bloqueo" : "Confirm block")}</button></form></div>}
+    {accountNotice && <div className="fixed inset-0 z-[85] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-label="Blynk Safety" className="blynk-card w-full max-w-md rounded-[2rem] p-7 text-center"><span className={`mx-auto grid size-16 place-items-center rounded-3xl text-3xl ${accountNotice.notice_type === "profile_suspended" ? "bg-rose-400/15 text-rose-200" : "bg-emerald-400/15 text-emerald-200"}`}>{accountNotice.notice_type === "profile_suspended" ? "⚠" : "✓"}</span><p className="mt-5 text-xs font-bold uppercase tracking-widest text-pink-300">Blynk Safety</p><h2 className="mt-2 text-2xl font-black">{accountNotice.notice_type === "profile_suspended" ? (language === "es" ? "Tu perfil fue suspendido" : "Your profile was suspended") : (language === "es" ? "Tu perfil fue restaurado" : "Your profile was restored")}</h2><p className="mt-3 text-sm leading-6 text-white/65">{accountNotice.notice_type === "profile_suspended" ? (language === "es" ? "Tu perfil dejó de aparecer en Descubrir mientras Blynk revisa los reportes. Si crees que fue un error, contáctanos para solicitar una revisión." : "Your profile no longer appears in Discover while Blynk reviews reports. If you believe this was a mistake, contact us to request a review.") : (language === "es" ? "Después de la revisión, tu perfil vuelve a estar disponible en Descubrir." : "After review, your profile is available in Discover again.")}</p><button onClick={() => void dismissAccountNotice()} className="pink-gradient soft-button mt-6 w-full rounded-xl py-3.5 font-bold">{language === "es" ? "Entendido" : "Got it"}</button></section></div>}
     {toast && <div className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-full bg-white px-5 py-3 text-sm font-bold text-[#171322] shadow-xl lg:bottom-8">{toast}</div>}
     {tab === "profile" && <button onClick={() => setPreviewingOwnProfile(true)} className="fixed right-4 top-32 z-40 rounded-full border border-pink-300/30 bg-[#1b1a2b]/95 px-4 py-2 text-xs font-black text-pink-200 shadow-xl backdrop-blur">◉ {language === "es" ? "Vista pública" : "Public view"}</button>}
     {matchRequests.some((request) => request.incoming && request.status === "pending") && <aside className="fixed bottom-20 right-4 z-40 w-72 rounded-3xl border border-white/15 bg-[#151525f5] p-4 shadow-2xl backdrop-blur-xl sm:bottom-6"><div className="flex items-center justify-between"><p className="text-sm font-black text-pink-300">{language === "es" ? "Solicitudes" : "Requests"}</p><button onClick={() => void loadMatches()} className="text-xs text-white/50">↻</button></div><div className="mt-3 space-y-2">{matchRequests.filter((request) => request.incoming && request.status === "pending").map((request) => <div key={request.id} className="rounded-2xl bg-white/5 p-3"><p className="text-sm font-bold">{request.otherName}</p><p className="mt-1 text-xs text-white/50">{language === "es" ? "Quiere conectar contigo" : "Wants to connect"}</p><div className="mt-3 flex gap-2"><button onClick={() => void respondToMatch(request, "rejected")} className="flex-1 rounded-xl bg-white/10 py-2 text-xs font-bold">×</button><button onClick={() => void respondToMatch(request, "accepted")} className="pink-gradient flex-1 rounded-xl py-2 text-xs font-bold">✓</button></div></div>)}</div></aside>}
