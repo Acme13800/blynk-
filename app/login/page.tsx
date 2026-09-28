@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
@@ -14,6 +14,14 @@ export default function LoginPage() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    if (mode !== "login") return;
+    const form = document.querySelector("form"); const submit = Array.from(form?.querySelectorAll<HTMLButtonElement>("button") || []).find((button) => button.textContent?.includes("Sign in"));
+    if (!form || !submit || form.querySelector("[data-blynk-account-help]")) return;
+    const help = document.createElement("a"); help.dataset.blynkAccountHelp = "true"; help.href = "/forgot-password"; help.className = "block -mt-1 text-right text-xs font-bold text-pink-300 hover:text-pink-100"; help.textContent = "Forgot password or confirmation email?"; form.insertBefore(help, submit);
+    return () => help.remove();
+  }, [mode]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (mode === "signup" && !accepted) { setNotice("You must accept the Terms and Privacy Policy."); return; }
@@ -22,11 +30,12 @@ export default function LoginPage() {
     if (mode === "signup") await supabase.auth.signOut({ scope: "local" });
     const result = mode === "login" ? await supabase.auth.signInWithPassword({ email, password }) : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/login`, data: { terms_accepted_at: new Date().toISOString() } } });
     setBusy(false);
-    if (result.error) { setNotice(result.error.message); return; }
+    if (result.error) { setNotice(/email not confirmed/i.test(result.error.message) ? "Confirm your email before signing in. Use Account help to resend the confirmation message." : result.error.message); return; }
     if (mode === "signup") {
       setNotice("Check your email to confirm your account.");
       return;
     }
+    if (!result.data.user?.email_confirmed_at && !result.data.user?.confirmed_at) { await supabase.auth.signOut({ scope: "local" }); setNotice("Confirm your email before signing in. Use Account help to resend the confirmation message."); return; }
     router.replace("/");
   }
 

@@ -75,6 +75,7 @@ export default function BlynkHome() {
   const [safetyReason, setSafetyReason] = useState("");
   const [accountNotice, setAccountNotice] = useState<AccountNotice | null>(null);
   const [accountSuspended, setAccountSuspended] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [latestAppealResponse, setLatestAppealResponse] = useState("");
   const [blockedProfiles, setBlockedProfiles] = useState<BlockedProfile[]>([]);
   const [blockedListOpen, setBlockedListOpen] = useState(false);
@@ -111,6 +112,7 @@ export default function BlynkHome() {
     setSafetyAction(action);
   };
   const requireActiveAccount = () => {
+    if (!emailVerified) { notify(language === "es" ? "Confirma tu correo electrónico antes de usar esta función. Puedes reenviar el correo desde Ingresar > Ayuda de cuenta." : "Confirm your email before using this feature. You can resend it from Sign in > Account help."); return false; }
     if (!accountSuspended) return true;
     notify(language === "es" ? "Tu cuenta está suspendida mientras se revisa. No puedes realizar esta acción." : "Your account is suspended while under review. You cannot perform this action.");
     return false;
@@ -565,8 +567,11 @@ export default function BlynkHome() {
     async function loadMyProfile() {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return;
-      const { data } = await client.from("profiles").select("display_name, username, bio, avatar_url, cover_url, presentation_video_url, city, connection_intent, interests, onboarding_completed, suspended_at").eq("id", user.id).maybeSingle();
+      const { data } = await client.from("profiles").select("display_name, username, bio, avatar_url, cover_url, presentation_video_url, city, connection_intent, interests, onboarding_completed, suspended_at, email_verified_at").eq("id", user.id).maybeSingle();
       if (!data?.onboarding_completed && !data?.bio) { router.replace("/onboarding"); return; }
+      const verifiedAt = user.email_confirmed_at || user.confirmed_at || null;
+      setEmailVerified(Boolean(verifiedAt));
+      if (verifiedAt && data?.email_verified_at !== verifiedAt) await client.from("profiles").update({ email_verified_at: verifiedAt }).eq("id", user.id);
       setMyProfile({ displayName: data?.display_name || user.user_metadata.display_name || user.email?.split("@")[0] || "Blynk user", username: data?.username || "", bio: data?.bio || "", email: user.email || "", avatarUrl: data?.avatar_url || "", coverUrl: data?.cover_url || "", presentationVideoUrl: data?.presentation_video_url || "", city: data?.city || "", connectionIntent: data?.connection_intent || "", interests: data?.interests || [] });
       setPresentationVideo(data?.presentation_video_url || "");
       setAccountSuspended(Boolean(data?.suspended_at));
@@ -608,7 +613,7 @@ export default function BlynkHome() {
     async function loadRegisteredPeople() {
       const { data: { user } } = await client.auth.getUser();
       if (!user) return;
-      const { data } = await client.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url, city, birth_date, connection_intent, interests, suspended_at").neq("id", user.id).limit(50);
+      const { data } = await client.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url, city, birth_date, connection_intent, interests, suspended_at, email_verified_at").neq("id", user.id).not("email_verified_at", "is", null).limit(50);
       if (!data?.length) return;
       const { data: skipRows } = await client.from("profile_skips").select("profile_id").eq("user_id", user.id);
       const { data: blockRows } = await client.from("blocks").select("blocked_id").eq("blocker_id", user.id);
