@@ -108,7 +108,11 @@ export default function BlynkHome() {
     notify(language === "es" ? "Perfil descartado." : "Profile skipped.");
   };
   const blockProfile = async () => {
-    if (!person || !supabase || person.id.length < 20) return;
+    if (!person) return;
+    if (!supabase || person.id.length < 20) {
+      notify(language === "es" ? "Este es un perfil de demostración. Para probar bloqueos, usa una segunda cuenta registrada." : "This is a demo profile. To test blocking, use a second registered account.");
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { notify(language === "es" ? "Inicia sesión para bloquear perfiles." : "Sign in to block profiles."); return; }
     const { error } = await supabase.from("blocks").upsert({ blocker_id: user.id, blocked_id: person.id }, { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true });
@@ -118,7 +122,11 @@ export default function BlynkHome() {
     notify(language === "es" ? "Perfil bloqueado. No volverá a aparecer." : "Profile blocked. It will not appear again.");
   };
   const reportProfile = async () => {
-    if (!person || !supabase || person.id.length < 20) return;
+    if (!person) return;
+    if (!supabase || person.id.length < 20) {
+      notify(language === "es" ? "Este es un perfil de demostración. Para probar reportes, usa una segunda cuenta registrada." : "This is a demo profile. To test reporting, use a second registered account.");
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { notify(language === "es" ? "Inicia sesión para reportar perfiles." : "Sign in to report profiles."); return; }
     const { error } = await supabase.from("reports").insert({ reporter_id: user.id, target_user_id: person.id, reason: "Profile report from Discover" });
@@ -395,8 +403,8 @@ export default function BlynkHome() {
   // The Discover safety menu keeps block and report actions close to the profile being reviewed.
   useEffect(() => {
     const root = document.querySelector("main.blynk-shell");
-    const card = root?.querySelector<HTMLElement>(".blynk-video-feed > article");
-    if (!card || tab !== "discover" || !person || person.id.length < 20) return;
+    const card = root?.querySelector<HTMLElement>("section.min-w-0 article[aria-label]");
+    if (!card || tab !== "discover" || !person) return;
     card.querySelector("[data-blynk-profile-safety]")?.remove();
     const control = document.createElement("div");
     control.dataset.blynkProfileSafety = "true";
