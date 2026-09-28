@@ -6,7 +6,7 @@ import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
 type ReportRow = { id: string; reporter_id: string; target_user_id: string | null; reason: string; created_at: string };
 type ProfileRow = { id: string; display_name: string | null; username: string | null; avatar_url: string | null; city: string | null; suspended_at: string | null };
-type AppealRow = { id: string; user_id: string; reason: string; status: "pending" | "approved" | "denied"; created_at: string };
+type AppealRow = { id: string; user_id: string; reason: string; status: "pending" | "approved" | "denied"; created_at: string; admin_response?: string | null };
 
 export default function AdminPage() {
   const [checking, setChecking] = useState(true);
@@ -27,7 +27,7 @@ export default function AdminPage() {
       const { data: reportRows, error: reportError } = await supabase.from("reports").select("id, reporter_id, target_user_id, reason, created_at").not("target_user_id", "is", null).order("created_at", { ascending: false }).limit(100);
       if (reportError) { setNotice(reportError.message); return; }
       const rows = (reportRows || []) as ReportRow[];
-      const { data: appealRows, error: appealError } = await supabase.from("account_appeals").select("id, user_id, reason, status, created_at").eq("status", "pending").order("created_at", { ascending: true }).limit(100);
+      const { data: appealRows, error: appealError } = await supabase.from("account_appeals").select("id, user_id, reason, status, created_at, admin_response").eq("status", "pending").order("created_at", { ascending: true }).limit(100);
       if (appealError) { setNotice(appealError.message); return; }
       const pendingAppeals = (appealRows || []) as AppealRow[];
       const ids = [...new Set([...rows.map((report) => report.target_user_id), ...pendingAppeals.map((appeal) => appeal.user_id)].filter(Boolean))] as string[];
@@ -83,6 +83,7 @@ export default function AdminPage() {
     if (!root || !header) return;
     root.querySelector("[data-blynk-priority-summary]")?.remove();
     root.querySelectorAll("[data-blynk-priority-label]").forEach((label) => label.remove());
+    root.querySelectorAll("[data-blynk-report-history]").forEach((history) => history.remove());
     const summary = document.createElement("div");
     summary.dataset.blynkPrioritySummary = "true";
     summary.className = "mt-5 flex flex-wrap items-center gap-2";
@@ -90,6 +91,14 @@ export default function AdminPage() {
     header.after(summary);
     const cards = Array.from(root.querySelectorAll<HTMLElement>("article"));
     cards.forEach((card, index) => {
+      const reportHistory = groupedReports[index]?.reports || [];
+      const history = document.createElement("details");
+      history.dataset.blynkReportHistory = "true";
+      history.className = "mt-4 rounded-2xl border border-white/10 bg-black/15 p-3";
+      const historyTitle = document.createElement("summary"); historyTitle.className = "cursor-pointer text-sm font-bold text-pink-100"; historyTitle.textContent = `View all ${reportHistory.length} report${reportHistory.length === 1 ? "" : "s"}`;
+      const historyList = document.createElement("div"); historyList.className = "mt-3 space-y-3";
+      reportHistory.forEach((report, reportIndex) => { const item = document.createElement("div"); item.className = "border-t border-white/10 pt-3 first:border-0 first:pt-0"; const reason = document.createElement("p"); reason.className = "text-sm text-white/75"; reason.textContent = report.reason; const date = document.createElement("p"); date.className = "mt-1 text-xs text-white/40"; date.textContent = `Report ${reportIndex + 1} · ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(report.created_at))} · Reporter protected`; item.append(reason, date); historyList.appendChild(item); });
+      history.append(historyTitle, historyList); card.appendChild(history);
       const reporters = new Set(groupedReports[index]?.reports.map((report) => report.reporter_id) || []).size;
       if (reporters < 3) return;
       card.classList.add("border-rose-300/40");
@@ -99,7 +108,7 @@ export default function AdminPage() {
       label.textContent = "High priority";
       card.querySelector("h2")?.after(label);
     });
-    return () => { summary.remove(); root.querySelectorAll("[data-blynk-priority-label]").forEach((label) => label.remove()); };
+    return () => { summary.remove(); root.querySelectorAll("[data-blynk-priority-label]").forEach((label) => label.remove()); root.querySelectorAll("[data-blynk-report-history]").forEach((history) => history.remove()); };
   }, [authorized, groupedReports, highPriorityCount]);
 
   useEffect(() => {
@@ -115,7 +124,7 @@ export default function AdminPage() {
     const count = document.createElement("span"); count.className = "rounded-full bg-pink-400/15 px-3 py-1 text-xs font-bold text-pink-200"; count.textContent = `${appeals.length} pending`;
     heading.append(title, count); section.appendChild(heading);
     if (!appeals.length) { const empty = document.createElement("p"); empty.className = "mt-3 text-sm text-white/50"; empty.textContent = "There are no account review requests."; section.appendChild(empty); }
-    appeals.forEach((appeal) => { const profile = profiles[appeal.user_id]; const card = document.createElement("article"); card.className = "mt-4 rounded-2xl bg-black/20 p-4"; const name = document.createElement("p"); name.className = "font-bold"; name.textContent = profile?.display_name || "Blynk user"; const meta = document.createElement("p"); meta.className = "mt-1 text-xs text-white/45"; meta.textContent = `@${profile?.username || "unknown"} · ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(appeal.created_at))}`; const reason = document.createElement("p"); reason.className = "mt-3 whitespace-pre-wrap text-sm leading-6 text-white/70"; reason.textContent = appeal.reason; const actions = document.createElement("div"); actions.className = "mt-4 flex gap-2"; const deny = document.createElement("button"); deny.className = "rounded-xl border border-white/15 px-4 py-2 text-sm font-bold"; deny.textContent = "Deny"; deny.addEventListener("click", () => void resolveAppeal(appeal, false)); const approve = document.createElement("button"); approve.className = "rounded-xl bg-emerald-400/20 px-4 py-2 text-sm font-bold text-emerald-100"; approve.textContent = "Restore profile"; approve.addEventListener("click", () => void resolveAppeal(appeal, true)); actions.append(deny, approve); card.append(name, meta, reason, actions); section.appendChild(card); });
+    appeals.forEach((appeal) => { const profile = profiles[appeal.user_id]; const card = document.createElement("article"); card.className = "mt-4 rounded-2xl bg-black/20 p-4"; const name = document.createElement("p"); name.className = "font-bold"; name.textContent = profile?.display_name || "Blynk user"; const meta = document.createElement("p"); meta.className = "mt-1 text-xs text-white/45"; meta.textContent = `@${profile?.username || "unknown"} · ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(appeal.created_at))}`; const reason = document.createElement("p"); reason.className = "mt-3 whitespace-pre-wrap text-sm leading-6 text-white/70"; reason.textContent = appeal.reason; const response = document.createElement("textarea"); response.className = "mt-4 min-h-24 w-full rounded-xl border border-white/15 bg-black/20 p-3 text-sm text-white outline-none"; response.maxLength = 1000; response.placeholder = "Optional private response shown only to this member"; const actions = document.createElement("div"); actions.className = "mt-3 flex flex-wrap gap-2"; const deny = document.createElement("button"); deny.className = "rounded-xl border border-white/15 px-4 py-2 text-sm font-bold"; deny.textContent = "Send response & deny"; deny.addEventListener("click", () => void resolveAppeal(appeal, false, response.value)); const approve = document.createElement("button"); approve.className = "rounded-xl bg-emerald-400/20 px-4 py-2 text-sm font-bold text-emerald-100"; approve.textContent = "Send response & restore"; approve.addEventListener("click", () => void resolveAppeal(appeal, true, response.value)); actions.append(deny, approve); card.append(name, meta, reason, response, actions); section.appendChild(card); });
     const anchor = root.querySelector("[data-blynk-priority-summary]");
     if (anchor) anchor.after(section); else root.querySelector("header")?.after(section);
     return () => section.remove();
@@ -135,12 +144,12 @@ export default function AdminPage() {
     setProfiles((items) => ({ ...items, [profileId]: { ...items[profileId], suspended_at: suspended ? new Date().toISOString() : null } }));
     setNotice(suspended ? "Profile suspended. It is now hidden from Discover." : "Profile restored.");
   };
-  const resolveAppeal = async (appeal: AppealRow, approved: boolean) => {
+  const resolveAppeal = async (appeal: AppealRow, approved: boolean, adminResponse = "") => {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     if (approved) await setSuspension(appeal.user_id, false);
-    const { error } = await supabase.from("account_appeals").update({ status: approved ? "approved" : "denied", reviewed_at: new Date().toISOString(), reviewed_by: user.id }).eq("id", appeal.id);
+    const { error } = await supabase.from("account_appeals").update({ status: approved ? "approved" : "denied", admin_response: adminResponse.trim() || null, responded_at: new Date().toISOString(), reviewed_at: new Date().toISOString(), reviewed_by: user.id, responded_by: user.id }).eq("id", appeal.id);
     if (error) { setNotice(error.message); return; }
     if (!approved) {
       const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: appeal.user_id, notice_type: "appeal_denied" });
