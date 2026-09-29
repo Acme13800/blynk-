@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
@@ -77,7 +77,8 @@ export default function BlynkHome() {
   const [accountSuspended, setAccountSuspended] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
   const [latestAppealResponse, setLatestAppealResponse] = useState("");
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() => typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported");
+  const [pushActive, setPushActive] = useState(false);
   const [blockedProfiles, setBlockedProfiles] = useState<BlockedProfile[]>([]);
   const [blockedListOpen, setBlockedListOpen] = useState(false);
   const [appealOpen, setAppealOpen] = useState(false);
@@ -99,14 +100,44 @@ export default function BlynkHome() {
 
   const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
   const sendBrowserNotification = (title: string, body: string, openMessages = false) => {
+    if (pushActive) return;
     if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "granted") return;
     const notification = new Notification(title, { body, tag: `blynk-${title}` });
     notification.onclick = () => { window.focus(); if (openMessages) setTab("messages"); notification.close(); };
   };
+  const urlBase64ToUint8Array = (value: string) => {
+    const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4 || 4)) % 4, "=");
+    return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  };
+  const subscribeToPush = useCallback(async () => {
+    if (!supabase || typeof window === "undefined" || !("serviceWorker" in navigator) || Notification.permission !== "granted") return false;
+    const [{ data: { session } }, configResponse] = await Promise.all([supabase.auth.getSession(), fetch("/api/push/config")]);
+    if (!session || !configResponse.ok) return false;
+    const config = await configResponse.json() as { publicKey?: string };
+    if (!config.publicKey) return false;
+    try {
+      await navigator.serviceWorker.register("/blynk-sw.js");
+      const readyRegistration = await navigator.serviceWorker.ready;
+      const subscription = await readyRegistration.pushManager.getSubscription() || await readyRegistration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(config.publicKey) });
+      const response = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ subscription: subscription.toJSON() }) });
+      if (!response.ok) return false;
+      setPushActive(true);
+      return true;
+    } catch { return false; }
+  }, []);
+  const triggerWebPush = async (kind: "message" | "match", recipientId: string, referenceId: string) => {
+    if (!supabase) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    await fetch("/api/push/send", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ kind, recipientId, referenceId, language }) }).catch(() => undefined);
+  };
   const requestBrowserNotifications = async () => {
     if (typeof window === "undefined" || !("Notification" in window)) { notify(language === "es" ? "Este navegador no admite notificaciones." : "This browser does not support notifications."); return; }
     const permission = await Notification.requestPermission(); setNotificationPermission(permission);
-    notify(permission === "granted" ? (language === "es" ? "Notificaciones activadas." : "Notifications enabled.") : (language === "es" ? "No se activaron las notificaciones. Puedes cambiarlas en los ajustes del navegador." : "Notifications were not enabled. You can change this in browser settings."));
+    if (permission !== "granted") { notify(language === "es" ? "No se activaron las notificaciones. Puedes cambiarlas en los ajustes del navegador." : "Notifications were not enabled. You can change this in browser settings."); return; }
+    const subscribed = await subscribeToPush();
+    notify(subscribed ? (language === "es" ? "Notificaciones activadas en este dispositivo." : "Notifications enabled on this device.") : (language === "es" ? "El permiso fue aceptado, pero falta configurar Web Push en el servidor." : "Permission was accepted, but Web Push still needs server setup."));
   };
   const validateMediaFile = (file: File) => {
     const allowedImages = ["image/jpeg", "image/png", "image/webp"];
@@ -293,9 +324,9 @@ export default function BlynkHome() {
     if (!user) { notify(language === "es" ? "Inicia sesión para solicitar un match." : "Sign in to request a match."); return; }
     const { data: existingMatch } = await supabase.from("match_requests").select("id, status").or(`and(sender_id.eq.${user.id},recipient_id.eq.${person.id}),and(sender_id.eq.${person.id},recipient_id.eq.${user.id})`).limit(1).maybeSingle();
     if (existingMatch) { notify(existingMatch.status === "accepted" ? (language === "es" ? "Ya tienes un match con esta persona." : "You already have a match with this person.") : (language === "es" ? "Ya existe una solicitud con esta persona." : "A request already exists with this person.")); return; }
-    const { error } = await supabase.from("match_requests").upsert({ sender_id: user.id, recipient_id: person.id, status: "pending" }, { onConflict: "sender_id,recipient_id" });
+    const { data: createdMatch, error } = await supabase.from("match_requests").upsert({ sender_id: user.id, recipient_id: person.id, status: "pending" }, { onConflict: "sender_id,recipient_id" }).select("id").single();
     if (error) { notify(`${language === "es" ? "No se pudo enviar la solicitud" : "Could not send the request"}: ${error.message}`); return; }
-    notify(t.matched); void loadMatches();
+    notify(t.matched); void triggerWebPush("match", person.id, createdMatch.id); void loadMatches();
   };
   const respondToMatch = async (request: MatchRequest, status: "accepted" | "rejected") => {
     if (!requireActiveAccount()) return;
@@ -494,6 +525,7 @@ export default function BlynkHome() {
     }
     setChat((items) => [...items, { id: data.id, from: "me", text: content, mediaUrl: mediaUrl || undefined, mediaType: mediaType || undefined, createdAt: data.created_at, readAt: null }]);
     setMessage(""); setMessageMediaFile(null); setMessageMediaPreview("");
+    void triggerWebPush("message", activeMatch.otherId, data.id);
   };
 
   // Keyboard listener is intentionally installed once for the screen lifetime.
@@ -649,8 +681,15 @@ export default function BlynkHome() {
     void loadRegisteredPeople();
   }, [language]);
   useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-    setNotificationPermission(Notification.permission);
+    if (notificationPermission !== "granted") return;
+    const timer = window.setTimeout(() => void subscribeToPush(), 0);
+    return () => window.clearTimeout(timer);
+  }, [notificationPermission, subscribeToPush]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (new URLSearchParams(window.location.search).get("tab") === "messages") setTab("messages");
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;

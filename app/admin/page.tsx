@@ -111,6 +111,36 @@ export default function AdminPage() {
     return () => { summary.remove(); root.querySelectorAll("[data-blynk-priority-label]").forEach((label) => label.remove()); root.querySelectorAll("[data-blynk-report-history]").forEach((history) => history.remove()); };
   }, [authorized, groupedReports, highPriorityCount]);
 
+  const setSuspension = async (profileId: string, suspended: boolean) => {
+    if (!supabase) return;
+    const { error } = await supabase.from("profiles").update({ suspended_at: suspended ? new Date().toISOString() : null }).eq("id", profileId);
+    if (error) { setNotice(error.message); return; }
+    const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: profileId, notice_type: suspended ? "profile_suspended" : "profile_restored" });
+    if (noticeError) { setNotice(`Profile updated, but the notice could not be sent: ${noticeError.message}`); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { error: auditError } = await supabase.from("moderation_actions").insert({ admin_id: user.id, target_user_id: profileId, action: suspended ? "suspended" : "restored" });
+      if (auditError) { setNotice(`Profile updated, but the audit record could not be saved: ${auditError.message}`); return; }
+    }
+    setProfiles((items) => ({ ...items, [profileId]: { ...items[profileId], suspended_at: suspended ? new Date().toISOString() : null } }));
+    setNotice(suspended ? "Profile suspended. It is now hidden from Discover." : "Profile restored.");
+  };
+
+  async function resolveAppeal(appeal: AppealRow, approved: boolean, adminResponse = "") {
+    if (!supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    if (approved) await setSuspension(appeal.user_id, false);
+    const { error } = await supabase.from("account_appeals").update({ status: approved ? "approved" : "denied", admin_response: adminResponse.trim() || null, responded_at: new Date().toISOString(), reviewed_at: new Date().toISOString(), reviewed_by: user.id, responded_by: user.id }).eq("id", appeal.id);
+    if (error) { setNotice(error.message); return; }
+    if (!approved) {
+      const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: appeal.user_id, notice_type: "appeal_denied" });
+      if (noticeError) { setNotice(`Appeal was denied, but the account notice could not be sent: ${noticeError.message}`); return; }
+    }
+    setAppeals((items) => items.filter((item) => item.id !== appeal.id));
+    setNotice(approved ? "Appeal approved and profile restored." : "Appeal denied.");
+  }
+
   useEffect(() => {
     if (!authorized) return;
     const root = document.querySelector("main.blynk-shell .mx-auto.max-w-3xl");
@@ -129,35 +159,6 @@ export default function AdminPage() {
     if (anchor) anchor.after(section); else root.querySelector("header")?.after(section);
     return () => section.remove();
   }, [authorized, appeals, profiles]);
-
-  const setSuspension = async (profileId: string, suspended: boolean) => {
-    if (!supabase) return;
-    const { error } = await supabase.from("profiles").update({ suspended_at: suspended ? new Date().toISOString() : null }).eq("id", profileId);
-    if (error) { setNotice(error.message); return; }
-    const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: profileId, notice_type: suspended ? "profile_suspended" : "profile_restored" });
-    if (noticeError) { setNotice(`Profile updated, but the notice could not be sent: ${noticeError.message}`); return; }
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { error: auditError } = await supabase.from("moderation_actions").insert({ admin_id: user.id, target_user_id: profileId, action: suspended ? "suspended" : "restored" });
-      if (auditError) { setNotice(`Profile updated, but the audit record could not be saved: ${auditError.message}`); return; }
-    }
-    setProfiles((items) => ({ ...items, [profileId]: { ...items[profileId], suspended_at: suspended ? new Date().toISOString() : null } }));
-    setNotice(suspended ? "Profile suspended. It is now hidden from Discover." : "Profile restored.");
-  };
-  const resolveAppeal = async (appeal: AppealRow, approved: boolean, adminResponse = "") => {
-    if (!supabase) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    if (approved) await setSuspension(appeal.user_id, false);
-    const { error } = await supabase.from("account_appeals").update({ status: approved ? "approved" : "denied", admin_response: adminResponse.trim() || null, responded_at: new Date().toISOString(), reviewed_at: new Date().toISOString(), reviewed_by: user.id, responded_by: user.id }).eq("id", appeal.id);
-    if (error) { setNotice(error.message); return; }
-    if (!approved) {
-      const { error: noticeError } = await supabase.from("account_notices").insert({ user_id: appeal.user_id, notice_type: "appeal_denied" });
-      if (noticeError) { setNotice(`Appeal was denied, but the account notice could not be sent: ${noticeError.message}`); return; }
-    }
-    setAppeals((items) => items.filter((item) => item.id !== appeal.id));
-    setNotice(approved ? "Appeal approved and profile restored." : "Appeal denied.");
-  };
 
   if (checking) return <main className="blynk-shell grid min-h-screen place-items-center p-6 text-white/70">Checking administrator access…</main>;
   if (!authorized) return <main className="blynk-shell grid min-h-screen place-items-center p-6"><form onSubmit={authenticateAdmin} className="blynk-card w-full max-w-md rounded-[2rem] p-7"><p className="text-xs font-bold uppercase tracking-widest text-pink-300">Blynk Safety</p><h1 className="mt-3 text-2xl font-black">Administrator sign in</h1><p className="mt-3 text-sm leading-6 text-white/60">For security, enter your administrator email and password again to open the moderation queue.</p><label className="mt-6 block text-sm font-bold">Email<input required autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-white outline-none" /></label><label className="mt-4 block text-sm font-bold">Password<input required autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 text-white outline-none" /></label>{notice && <p className="mt-4 rounded-xl border border-rose-300/20 bg-rose-400/10 p-3 text-sm text-rose-100">{notice}</p>}<button disabled={authenticating} className="pink-gradient soft-button mt-6 w-full rounded-xl py-3.5 font-bold disabled:opacity-60">{authenticating ? "Verifying…" : "Secure sign in"}</button><Link href="/" className="mt-4 block text-center text-sm font-bold text-pink-200">Return to Blynk</Link></form></main>;
