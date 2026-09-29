@@ -16,11 +16,18 @@ export async function POST(request: Request) {
   }
 
   const admin = getServiceSupabase();
-  const referenceTable = body.kind === "message" ? "messages" : "match_requests";
-  const { data: reference } = await admin.from(referenceTable).select("sender_id, receiver_id, recipient_id").eq("id", body.referenceId).maybeSingle();
+  // These tables intentionally use different recipient column names. Query only
+  // the columns that belong to the selected table; selecting both sets makes
+  // Supabase reject the request before a push can be delivered.
   const isAuthorized = body.kind === "message"
-    ? reference?.sender_id === sender.id && reference?.receiver_id === body.recipientId
-    : reference?.sender_id === sender.id && reference?.recipient_id === body.recipientId;
+    ? await (async () => {
+      const { data: reference } = await admin.from("messages").select("sender_id, receiver_id").eq("id", body.referenceId).maybeSingle();
+      return reference?.sender_id === sender.id && reference?.receiver_id === body.recipientId;
+    })()
+    : await (async () => {
+      const { data: reference } = await admin.from("match_requests").select("sender_id, recipient_id").eq("id", body.referenceId).maybeSingle();
+      return reference?.sender_id === sender.id && reference?.recipient_id === body.recipientId;
+    })();
   if (!isAuthorized) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { data: senderProfile } = await admin.from("profiles").select("display_name").eq("id", sender.id).maybeSingle();
