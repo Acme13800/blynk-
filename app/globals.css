@@ -154,6 +154,16 @@ select[aria-label="Language"] option {
   background: #171526;
   color: #fff1f8;
 }
+
+/* The profile controls are one responsive toolbar, so they never cover Edit or profile content. */
+.blynk-profile-toolbar ~ section.fixed.inset-x-0.bottom-0 {
+  top: 7.4rem !important;
+}
+
+.blynk-profile-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes blynk-eye-blink { 0%, 82%, 100% { transform: scaleY(1); } 88%, 94% { transform: scaleY(.12); } }
 button[class*="z-[70]"] > span:first-child { position: relative; overflow: hidden; font-size: 0 !important; background: transparent !important; }
 button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; height: 19px; border-radius: 60% 12%; background: radial-gradient(circle at 50% 50%, #071726 0 19%, #39d9dc 21% 37%, #fff7fd 39% 64%, #f13ab5 66% 100%); transform: rotate(45deg); box-shadow: 0 0 16px #f13ab5; animation: blynk-eye-blink 2.3s ease-in-out infinite; }
