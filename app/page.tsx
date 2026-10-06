@@ -96,7 +96,8 @@ export default function BlynkHome() {
   const availableInterests = [...new Set(candidatePeople.flatMap((profile) => profile.tags))].sort();
   const person = discoverPeople[personIndex % discoverPeople.length];
   const conversationName = activeMatch?.otherName || (language === "es" ? "Selecciona un match" : "Select a match");
-  const hasReceivedMessage = chat.some((item) => item.from !== "me");
+  // A confirmed match can start a conversation before either person sends a message.
+  const hasReceivedMessage = Boolean(activeMatch) || chat.some((item) => item.from !== "me");
 
   const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
   const sendBrowserNotification = (title: string, body: string, openMessages = false) => {
@@ -313,7 +314,9 @@ export default function BlynkHome() {
     const { data: inboxRows } = await supabase.from("messages").select("sender_id, content, created_at, read_at").eq("receiver_id", user.id).in("sender_id", acceptedIds).order("created_at", { ascending: false });
     const previewById: Record<string, InboxPreview> = {};
     for (const row of inboxRows || []) if (!previewById[row.sender_id]) previewById[row.sender_id] = { content: row.content || "", createdAt: row.created_at, unread: !row.read_at };
-    setInboxMatchIds(Object.keys(previewById));
+    // A confirmed match is a conversation immediately; it must not wait for an
+    // incoming message before appearing in the Messages tab.
+    setInboxMatchIds(acceptedIds);
     setInboxPreviews(previewById);
   };
   const requestMatch = async () => {
