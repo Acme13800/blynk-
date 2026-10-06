@@ -2,6 +2,8 @@ self.addEventListener("push", (event) => {
   const data = event.data ? event.data.json() : {};
   event.waitUntil(self.registration.showNotification(data.title || "Blynk", {
     body: data.body || "You have a new update.",
+    icon: "/blynk-eye.svg",
+    badge: "/blynk-eye.svg",
     tag: data.tag || "blynk-update",
     renotify: true,
     data: { url: data.url || "/" },
