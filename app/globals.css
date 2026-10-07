@@ -165,6 +165,31 @@ select[aria-label="Language"] option {
 }
 
 @keyframes blynk-eye-blink { 0%, 82%, 100% { transform: scaleY(1); } 88%, 94% { transform: scaleY(.12); } }
+
+/* Center brand eye: the original mark stays intact; this only adds a restrained neon halo. */
+.blynk-shell > header [aria-label="Ojo Blynk"] {
+  isolation: isolate;
+}
+
+.blynk-shell > header [aria-label="Ojo Blynk"]::before {
+  background: linear-gradient(90deg, transparent, rgb(236 72 153 / .55), rgb(96 165 250 / .55), transparent);
+  border-radius: 9999px;
+  content: "";
+  filter: blur(1px);
+  height: 2px;
+  left: 50%;
+  opacity: .7;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: clamp(7rem, 20vw, 15rem);
+  z-index: -1;
+}
+
+.blynk-shell > header [aria-label="Ojo Blynk"] svg {
+  filter: drop-shadow(0 0 10px rgb(236 72 153 / .7)) drop-shadow(0 0 18px rgb(96 165 250 / .25));
+}
+
 button[class*="z-[70]"] > span:first-child { position: relative; overflow: hidden; font-size: 0 !important; background: transparent !important; }
 button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; height: 19px; border-radius: 60% 12%; background: radial-gradient(circle at 50% 50%, #071726 0 19%, #39d9dc 21% 37%, #fff7fd 39% 64%, #f13ab5 66% 100%); transform: rotate(45deg); box-shadow: 0 0 16px #f13ab5; animation: blynk-eye-blink 2.3s ease-in-out infinite; }
 @media (max-width: 640px) {
