@@ -5,6 +5,29 @@
 html { background: var(--ink); }
 body { margin: 0; background: var(--ink); color: #f8f7ff; font-family: Arial, Helvetica, sans-serif; }
 button, input, textarea, select { font: inherit; }
+/* Native date controls need a dark color scheme and a visible touch target. */
+.blynk-card input[type="date"] {
+  color-scheme: dark;
+  color: #f8f7ff;
+  min-height: 3.5rem;
+  min-width: 0;
+  font-size: 16px;
+}
+.blynk-card input[type="date"]::-webkit-calendar-picker-indicator {
+  box-sizing: content-box;
+  cursor: pointer;
+  opacity: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: .625rem;
+  margin: -.625rem -.5rem -.625rem .5rem;
+  border-radius: .625rem;
+  background-color: rgb(244 114 182 / .2);
+}
+.blynk-card input[type="date"]:focus-visible {
+  outline: 2px solid #f9a8d4;
+  outline-offset: 3px;
+}
 button { cursor: pointer; }
 ::selection { background: #f13ab5; color: #fff; }
 .blynk-shell { min-height: 100dvh; background: radial-gradient(circle at 18% 10%, #54215b55, transparent 28rem), radial-gradient(circle at 82% 80%, #3c237855, transparent 28rem), var(--ink); }
