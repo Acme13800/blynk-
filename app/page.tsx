@@ -87,7 +87,8 @@ export default function BlynkHome() {
   const [myProfile, setMyProfile] = useState({ displayName: "", username: "", bio: "", email: "", avatarUrl: "", coverUrl: "", presentationVideoUrl: "", city: "", connectionIntent: "", interests: [] as string[] });
   const [editingProfile, setEditingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const startY = useRef(0);
+  const startY = useRef<number | null>(null);
+  const startX = useRef(0);
   const t = copy[language];
   const profileAge = (birthDate?: string | null) => { if (!birthDate) return 18; const birth = new Date(`${birthDate}T00:00:00`); const today = new Date(); return today.getFullYear() - birth.getFullYear() - (today < new Date(today.getFullYear(), birth.getMonth(), birth.getDate()) ? 1 : 0); };
   const candidatePeople = registeredPeople.length ? registeredPeople : people;
@@ -189,7 +190,8 @@ export default function BlynkHome() {
     notify(language === "es" ? "Tu solicitud de revisión fue enviada." : "Your review request was sent.");
   };
   const messageTime = (date: string) => new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(date));
-  const nextPerson = () => setPersonIndex((value) => (value + 1) % discoverPeople.length);
+  const nextPerson = () => { if (discoverPeople.length) setPersonIndex((value) => value + 1); };
+  const previousPerson = () => setPersonIndex((value) => Math.max(0, value - 1));
   const toggleProfileLike = async (event: React.MouseEvent) => {
     event.stopPropagation();
     if (!requireActiveAccount()) return;
@@ -227,8 +229,23 @@ export default function BlynkHome() {
     const { data } = await supabase.from("profile_media").select("media_url").eq("user_id", selected.id).order("created_at", { ascending: true }).limit(6);
     setViewingProfile({ person: selected, media: (data || []).map((item) => item.media_url) });
   };
-  const onTouchStart = (event: React.TouchEvent) => { startY.current = event.touches[0].clientY; };
-  const onTouchEnd = (event: React.TouchEvent) => { if (startY.current - event.changedTouches[0].clientY > 55) void skipProfile(); };
+  const onTouchStart = (event: React.TouchEvent) => {
+    const target = event.target as HTMLElement;
+    startY.current = null;
+    if (!target.closest("article") || target.closest("button, input, select, a") || event.touches.length !== 1) return;
+    startY.current = event.touches[0].clientY;
+    startX.current = event.touches[0].clientX;
+  };
+  const onTouchEnd = (event: React.TouchEvent) => {
+    const origin = startY.current;
+    startY.current = null;
+    if (origin === null || !event.changedTouches.length) return;
+    const deltaY = origin - event.changedTouches[0].clientY;
+    const deltaX = startX.current - event.changedTouches[0].clientX;
+    if (Math.abs(deltaY) < 55 || Math.abs(deltaY) <= Math.abs(deltaX)) return;
+    if (event.cancelable) event.preventDefault();
+    if (deltaY > 0) nextPerson(); else previousPerson();
+  };
   const addPost = async () => {
     if (!requireActiveAccount()) return;
     if ((!postText.trim() && !postVideo) || uploadingPost) return;
@@ -533,7 +550,18 @@ export default function BlynkHome() {
 
   // Keyboard listener is intentionally installed once for the screen lifetime.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.key === "ArrowDown") nextPerson(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (tab !== "discover" || !discoverPeople.length || document.querySelector('[role="dialog"]')) return;
+      if ((event.target as HTMLElement)?.closest("input, textarea, select, button, a, [contenteditable]")) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setPersonIndex((value) => event.key === "ArrowDown" ? value + 1 : Math.max(0, value - 1));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, discoverPeople.length]);
   // Give Discover a full-height vertical-video stage while preserving the existing swipe action.
   useEffect(() => {
     const root = document.querySelector("main.blynk-shell");

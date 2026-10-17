@@ -46,6 +46,9 @@ button { cursor: pointer; }
 .blynk-message-receipt.is-read { color: #00eb91; text-shadow: 0 0 13px #00eb91aa; }
 
 /* Discover becomes a vertical, immersive video experience. */
+.blynk-video-feed > article {
+  touch-action: pan-x pinch-zoom;
+}
 .blynk-video-feed {
   max-width: 30rem !important;
   overflow: clip;
