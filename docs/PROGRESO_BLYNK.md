@@ -1,6 +1,45 @@
 # Progreso de Blynk
 
-Última actualización: 21 de septiembre de 2026.
+Última actualización: 16 de octubre de 2026.
+
+## Punto de continuación — 16 de octubre de 2026
+
+### Cambios guardados en código
+
+- Encabezado con ojo centrado y marca pequeña a la izquierda; herramientas del perfil reorganizadas.
+- Una sola tarjeta de solicitud de match, sin el aviso flotante duplicado.
+- Descubrir: swipe hacia arriba para avanzar y hacia abajo para volver; flechas del teclado en computadora. El swipe ya no guarda un descarte.
+- Descubrir conectado a Supabase muestra perfiles registrados, sin sustituir una lista vacía por perfiles ficticios.
+- Corazón y menú de seguridad alineados a la derecha; texto y botones separados en móvil.
+- Calendario de nacimiento con contraste oscuro y un área de toque más visible.
+- Dos puntos verdes de leído más juntos.
+- Avisos de envío integrados dentro del chat y avisos generales con estilo oscuro.
+- Migración 031: permisos de bloqueo, incluido UPDATE para upsert.
+- Migración 032: impide nuevos mensajes y solicitudes entre cuentas bloqueadas en cualquiera de las dos direcciones; conserva el historial. Comprobación previa en el chat y filtro de bloqueos en Web Push.
+
+### Pruebas confirmadas por el usuario
+
+- Registro y confirmación de correo.
+- Campo/calendario de fecha de nacimiento.
+- Recuperación de contraseña.
+- Bloqueo: tras corregir los permisos y las validaciones, el usuario confirmó la prueba de envío restringido.
+- Presentación de avisos actualizada.
+- Desbloqueo y regreso a la conversación: usuario indicó «listo» tras los pasos; conviene repetirlo en la revisión final.
+
+Estas confirmaciones son pruebas manuales del usuario. No se auditó directamente el estado remoto de Supabase ni el despliegue de Vercel en esta sesión.
+
+### Siguiente sesión
+
+1. Probar reportar un perfil con motivo y revisar el reporte desde la cuenta administradora.
+2. Probar suspensión, solicitud de revisión, respuesta y restauración con dos cuentas.
+3. Continuar la lista `docs/QA_RELEASE_CHECKLIST.md` y comprobar Web Push con dispositivos distintos.
+4. Pendientes para lanzamiento: eliminación segura de cuenta y datos; completar los datos reales de las páginas legales y revisar sus textos; auditoría de permisos y traducciones.
+
+Punto de referencia del código antes de este resumen: `5cbf839` — `Polish chat notices and notifications`.
+
+## Registro histórico — septiembre de 2026
+
+Las secciones siguientes conservan las notas originales; algunos pendientes históricos ya se implementaron. Usar el punto de continuación anterior como estado más reciente.
 
 ## Implementado y funcional
 
