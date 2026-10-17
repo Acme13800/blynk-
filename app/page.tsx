@@ -527,6 +527,12 @@ export default function BlynkHome() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { notify(language === "es" ? "Inicia sesión para enviar mensajes." : "Sign in to message."); return; }
     setSendingMessage(true);
+    const { data: canContact, error: contactError } = await supabase.rpc("blynk_can_contact", { target_profile_id: activeMatch.otherId });
+    if (contactError || canContact !== true) {
+      setSendingMessage(false);
+      notify(contactError ? (language === "es" ? "No se pudo comprobar la disponibilidad del chat. Inténtalo más tarde." : "Could not check chat availability. Please try again later.") : (language === "es" ? "Esta conversación no está disponible para enviar mensajes." : "This conversation is unavailable for sending messages."));
+      return;
+    }
     let mediaUrl = "";
     let mediaType: "image" | "video" | null = null;
     if (messageMediaFile) {
@@ -540,7 +546,7 @@ export default function BlynkHome() {
     const { data, error } = await supabase.from("messages").insert({ sender_id: user.id, receiver_id: activeMatch.otherId, content: content || null, media_url: mediaUrl || null, media_type: mediaType }).select("id, created_at, read_at").single();
     setSendingMessage(false);
     if (error) {
-      const restricted = /row-level security|policy|suspended|permission denied/i.test(error.message);
+      const restricted = /row-level security|policy|suspended|permission denied|BLYNK_CONVERSATION_UNAVAILABLE/i.test(error.message);
       notify(restricted ? (language === "es" ? "Esta conversación no está disponible para enviar mensajes." : "This conversation is unavailable for sending messages.") : (language === "es" ? "No se pudo enviar el mensaje. Inténtalo de nuevo." : "Your message could not be sent. Please try again."));
       return;
     }

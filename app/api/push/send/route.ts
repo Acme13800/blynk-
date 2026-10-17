@@ -30,6 +30,12 @@ export async function POST(request: Request) {
     })();
   if (!isAuthorized) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  const { data: blocks, error: blockError } = await admin.from("blocks")
+    .select("blocker_id").in("blocker_id", [sender.id, body.recipientId])
+    .in("blocked_id", [sender.id, body.recipientId]).limit(1);
+  if (blockError) return NextResponse.json({ error: "Could not check notification availability." }, { status: 503 });
+  if (blocks?.length) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const { data: senderProfile } = await admin.from("profiles").select("display_name").eq("id", sender.id).maybeSingle();
   const senderName = senderProfile?.display_name || "Blynk";
   const spanish = body.language === "es";
