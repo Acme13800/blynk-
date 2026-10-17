@@ -84,7 +84,7 @@ button { cursor: pointer; }
 .blynk-video-feed > article > button[aria-label="Like"]:hover,
 .blynk-video-feed > article > button[aria-label="Me gusta"]:hover { background: rgb(244 114 182 / .28) !important; border-color: rgb(251 207 232 / .72) !important; }
 .blynk-profile-safety { position: absolute; right: 1rem; top: 4.5rem; z-index: 13; }
-.blynk-profile-safety-trigger { display: grid; place-items: center; size: 2.75rem; border: 1px solid rgb(255 255 255 / .26); border-radius: 9999px; background: rgb(9 9 20 / .64); box-shadow: 0 8px 24px rgb(0 0 0 / .26); color: #fff; font-weight: 900; letter-spacing: .08rem; backdrop-filter: blur(10px); transition: background .2s ease, border-color .2s ease, transform .2s ease; }
+.blynk-profile-safety-trigger { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; margin-left: auto; border: 1px solid rgb(255 255 255 / .26); border-radius: 9999px; background: rgb(9 9 20 / .64); box-shadow: 0 8px 24px rgb(0 0 0 / .26); color: #fff; font-weight: 900; letter-spacing: .08rem; backdrop-filter: blur(10px); transition: background .2s ease, border-color .2s ease, transform .2s ease; }
 .blynk-profile-safety-trigger:hover { border-color: rgb(251 207 232 / .72); background: rgb(255 255 255 / .15); transform: scale(1.04); }
 .blynk-profile-safety-menu { display: none; margin-top: .5rem; min-width: 10.5rem; overflow: hidden; border: 1px solid rgb(255 255 255 / .14); border-radius: .9rem; background: rgb(20 18 35 / .96); box-shadow: 0 14px 32px rgb(0 0 0 / .45); }
 .blynk-profile-safety.is-open .blynk-profile-safety-menu { display: grid; }
@@ -228,7 +228,7 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
     width: auto !important;
   }
   .blynk-video-feed {
-    min-height: calc(100dvh - 3.7rem);
+    min-height: 0;
     margin-left: calc(50% - 50vw) !important;
     margin-right: calc(50% - 50vw) !important;
     max-width: none !important;
@@ -240,13 +240,13 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
   .blynk-video-feed > article {
     border-radius: 0 !important;
     aspect-ratio: auto !important;
-    height: calc(100dvh - 3.7rem);
+    height: max(20rem, calc(100dvh - 14rem - env(safe-area-inset-bottom)));
     margin-left: calc(50% - 50vw);
     max-width: none !important;
     min-height: 0;
     width: 100vw !important;
   }
-  .blynk-video-feed > article > div:last-child {
+  .blynk-video-feed > article > .blynk-discover-caption {
     bottom: 0;
     left: 0;
     padding: 1.5rem 1.5rem 2rem;
@@ -255,12 +255,15 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
   }
   .blynk-video-feed > article + p { display: none; }
   .blynk-video-feed > article ~ div.grid {
-    bottom: calc(5.5rem + env(safe-area-inset-bottom));
-    left: 1rem;
-    margin: 0;
-    position: fixed;
+    margin: .75rem 1rem 0;
+    position: static;
+  }
+  .blynk-video-feed > article > .blynk-profile-safety {
+    left: auto;
     right: 1rem;
-    z-index: 35;
+    top: 4.5rem;
+    bottom: auto;
+    padding: 0;
   }
   .blynk-profile-language-menu {
     position: static;
