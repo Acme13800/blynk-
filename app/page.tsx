@@ -812,7 +812,7 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
       const receipt = (previous as HTMLSpanElement | null) || document.createElement("span");
       receipt.dataset.blynkReceipt = "true";
       receipt.className = `blynk-message-receipt ${message.readAt ? "is-read" : "is-delivered"}`;
-      receipt.textContent = message.readAt ? "● ●" : "●";
+      receipt.textContent = message.readAt ? "●●" : "●";
       receipt.setAttribute("aria-label", message.readAt ? (language === "es" ? "Leído" : "Read") : (language === "es" ? "Entregado" : "Delivered"));
       const time = bubble.querySelector("time");
       if (time) time.style.display = "inline";
