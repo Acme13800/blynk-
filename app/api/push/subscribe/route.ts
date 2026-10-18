@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid push subscription." }, { status: 400 });
   }
 
-  const { error } = await getServiceSupabase().from("push_subscriptions").upsert({
+  const { error, status } = await getServiceSupabase().from("push_subscriptions").upsert({
     user_id: user.id,
     endpoint: subscription.endpoint,
     p256dh: subscription.keys.p256dh,
@@ -24,7 +24,14 @@ export async function POST(request: Request) {
     user_agent: request.headers.get("user-agent") || null,
     updated_at: new Date().toISOString(),
   }, { onConflict: "endpoint" });
-  if (error) return NextResponse.json({ error: "Could not save this device." }, { status: 500 });
+  if (error) {
+    // Return only a safe category, never subscription credentials or database details.
+    const reason = ["42P01", "PGRST205", "PGRST204", "42703", "42P10"].includes(error.code) ? "push_database_setup"
+      : error.code === "42501" ? "push_database_access"
+      : status === 401 || error.code === "PGRST301" || error.code === "PGRST303" ? "push_server_key"
+      : error.code === "23503" ? "push_project_mismatch" : "device_save";
+    return NextResponse.json({ error: reason }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }
 

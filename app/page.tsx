@@ -138,7 +138,13 @@ export default function BlynkHome() {
       }
       subscription ||= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
       const response = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ subscription: subscription.toJSON() }) });
-      if (!response.ok) { setPushActive(false); setPushNotice("device_save"); return false; }
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        const knownErrors = ["push_database_setup", "push_database_access", "push_server_key", "push_project_mismatch"];
+        setPushActive(false);
+        setPushNotice(response.status === 401 ? "sign_in" : knownErrors.includes(result.error || "") ? result.error! : "device_save");
+        return false;
+      }
       localStorage.removeItem("blynk-push-disabled");
       setPushMuted(false); setPushActive(true); setPushNotice("enabled");
       return true;
