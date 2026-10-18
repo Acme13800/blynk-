@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import PushSettings from "@/app/components/PushSettings";
 
 type Tab = "discover" | "community" | "messages" | "profile";
 type Language = "es" | "en";
@@ -80,6 +81,9 @@ export default function BlynkHome() {
   const [latestAppealResponse, setLatestAppealResponse] = useState("");
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">(() => typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported");
   const [pushActive, setPushActive] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushNotice, setPushNotice] = useState("");
+  const [pushMuted, setPushMuted] = useState(false);
   const [blockedProfiles, setBlockedProfiles] = useState<BlockedProfile[]>([]);
   const [blockedListOpen, setBlockedListOpen] = useState(false);
   const [appealOpen, setAppealOpen] = useState(false);
@@ -103,7 +107,7 @@ export default function BlynkHome() {
 
   const notify = (value: string) => { setToast(value); window.setTimeout(() => setToast(""), 2600); };
   const sendBrowserNotification = (title: string, body: string, openMessages = false) => {
-    if (pushActive) return;
+    if (pushActive || pushMuted) return;
     if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "granted") return;
     const notification = new Notification(title, { body, tag: `blynk-${title}` });
     notification.onclick = () => { window.focus(); if (openMessages) setTab("messages"); notification.close(); };
@@ -113,21 +117,32 @@ export default function BlynkHome() {
     const padded = base64.padEnd(base64.length + (4 - (base64.length % 4 || 4)) % 4, "=");
     return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
   };
-  const subscribeToPush = useCallback(async () => {
-    if (!supabase || typeof window === "undefined" || !("serviceWorker" in navigator) || Notification.permission !== "granted") return false;
-    const [{ data: { session } }, configResponse] = await Promise.all([supabase.auth.getSession(), fetch("/api/push/config")]);
-    if (!session || !configResponse.ok) return false;
-    const config = await configResponse.json() as { publicKey?: string };
-    if (!config.publicKey) return false;
+  const subscribeToPush = useCallback(async (explicit = false) => {
     try {
+      if (!supabase || !("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) { setPushNotice("unsupported"); return false; }
+      if (!explicit && localStorage.getItem("blynk-push-disabled") === "true") { setPushMuted(true); return false; }
+      if (Notification.permission !== "granted") return false;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setPushNotice("sign_in"); return false; }
+      const configResponse = await fetch("/api/push/config", { cache: "no-store" });
+      if (!configResponse.ok) { setPushNotice("server_setup"); return false; }
+      const config = await configResponse.json() as { publicKey?: string };
+      if (!config.publicKey) { setPushNotice("server_setup"); return false; }
       await navigator.serviceWorker.register("/blynk-sw.js");
-      const readyRegistration = await navigator.serviceWorker.ready;
-      const subscription = await readyRegistration.pushManager.getSubscription() || await readyRegistration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(config.publicKey) });
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      const key = urlBase64ToUint8Array(config.publicKey);
+      if (subscription?.options.applicationServerKey && Array.from(new Uint8Array(subscription.options.applicationServerKey)).join() !== Array.from(key).join()) {
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+      subscription ||= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
       const response = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ subscription: subscription.toJSON() }) });
-      if (!response.ok) return false;
-      setPushActive(true);
+      if (!response.ok) { setPushActive(false); setPushNotice("device_save"); return false; }
+      localStorage.removeItem("blynk-push-disabled");
+      setPushMuted(false); setPushActive(true); setPushNotice("enabled");
       return true;
-    } catch { return false; }
+    } catch { setPushActive(false); setPushNotice("device_error"); return false; }
   }, []);
   const triggerWebPush = async (kind: "message" | "match", recipientId: string, referenceId: string) => {
     if (!supabase) return;
@@ -136,11 +151,48 @@ export default function BlynkHome() {
     await fetch("/api/push/send", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ kind, recipientId, referenceId, language }) }).catch(() => undefined);
   };
   const requestBrowserNotifications = async () => {
-    if (typeof window === "undefined" || !("Notification" in window)) { notify(language === "es" ? "Este navegador no admite notificaciones." : "This browser does not support notifications."); return; }
-    const permission = await Notification.requestPermission(); setNotificationPermission(permission);
-    if (permission !== "granted") { notify(language === "es" ? "No se activaron las notificaciones. Puedes cambiarlas en los ajustes del navegador." : "Notifications were not enabled. You can change this in browser settings."); return; }
-    const subscribed = await subscribeToPush();
-    notify(subscribed ? (language === "es" ? "Notificaciones activadas en este dispositivo." : "Notifications enabled on this device.") : (language === "es" ? "El permiso fue aceptado, pero falta configurar Web Push en el servidor." : "Permission was accepted, but Web Push still needs server setup."));
+    if (pushBusy) return;
+    setPushBusy(true); setPushNotice("");
+    try {
+      if (!("Notification" in window)) { setPushNotice("unsupported"); return; }
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission !== "granted") { setPushNotice("permission"); return; }
+      await subscribeToPush(true);
+    } catch { setPushNotice("device_error"); }
+    finally { setPushBusy(false); }
+  };
+  const disablePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    try {
+      localStorage.setItem("blynk-push-disabled", "true");
+      setPushMuted(true);
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      if (subscription && !(await subscription.unsubscribe())) { setPushNotice("disable_failed"); return; }
+      setPushActive(false); setPushNotice("disabled");
+      if (subscription && supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) await fetch("/api/push/subscribe", { method: "DELETE", headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ endpoint: subscription.endpoint }) });
+      }
+    } catch { setPushNotice("disable_failed"); }
+    finally { setPushBusy(false); }
+  };
+  const testPush = async () => {
+    if (pushBusy || !supabase) return;
+    setPushBusy(true); setPushNotice("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      if (!session || !subscription) { setPushActive(false); setPushNotice("device_missing"); return; }
+      const response = await fetch("/api/push/test", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ endpoint: subscription.endpoint, language }) });
+      const result = await response.json() as { error?: string };
+      setPushNotice(response.ok ? "test_sent" : result.error || "device_error");
+      if (result.error === "device_expired" || result.error === "device_missing") setPushActive(false);
+    } catch { setPushNotice("device_error"); }
+    finally { setPushBusy(false); }
   };
   const validateMediaFile = (file: File) => {
     const allowedImages = ["image/jpeg", "image/png", "image/webp"];
@@ -721,13 +773,14 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
     void loadRegisteredPeople();
   }, [language]);
   useEffect(() => {
-    if (notificationPermission !== "granted") return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
     const timer = window.setTimeout(() => void subscribeToPush(), 0);
     return () => window.clearTimeout(timer);
-  }, [notificationPermission, subscribeToPush]);
+  }, [subscribeToPush]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (new URLSearchParams(window.location.search).get("tab") === "messages") setTab("messages");
+      const requestedTab = new URLSearchParams(window.location.search).get("tab");
+      if (requestedTab === "messages" || requestedTab === "profile") setTab(requestedTab);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -800,16 +853,6 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
     void connectRealtime();
     return () => { if (channel) void client.removeChannel(channel); };
   }, [language, activeMatch?.otherId]);
-  useEffect(() => {
-    if (tab !== "profile") return;
-    const root = document.querySelector("main.blynk-shell"); const accountCard = Array.from(root?.querySelectorAll<HTMLElement>("article") || []).find((article) => article.textContent?.includes(language === "es" ? "Privacidad y cuenta" : "Privacy and account"));
-    if (!root || !accountCard || root.querySelector("[data-blynk-notifications-card]")) return;
-    const card = document.createElement("section"); card.dataset.blynkNotificationsCard = "true"; card.className = "blynk-card mt-4 rounded-3xl p-5";
-    const supported = notificationPermission !== "unsupported"; const enabled = notificationPermission === "granted";
-    card.innerHTML = `<div class="flex items-start justify-between gap-4"><div><h2 class="font-black">${language === "es" ? "Notificaciones" : "Notifications"}</h2><p class="mt-2 text-sm leading-6 text-white/55">${enabled ? (language === "es" ? "Recibirás avisos de mensajes, matches y seguridad mientras Blynk esté abierto." : "You will receive alerts for messages, matches, and safety while Blynk is open.") : (language === "es" ? "Activa los avisos del navegador para no perder mensajes y solicitudes." : "Enable browser alerts so you do not miss messages and requests.")}</p></div><span class="rounded-full px-3 py-1 text-xs font-bold ${enabled ? "bg-emerald-400/15 text-emerald-100" : "bg-white/10 text-white/60"}">${enabled ? (language === "es" ? "Activo" : "On") : (language === "es" ? "Desactivado" : "Off")}</span></div>${supported && !enabled ? `<button data-enable-blynk-notifications class="mt-4 w-full rounded-xl border border-pink-300/30 bg-pink-400/10 py-3 text-sm font-bold text-pink-100">${language === "es" ? "Activar notificaciones" : "Enable notifications"}</button>` : ""}`;
-    const button = card.querySelector<HTMLButtonElement>("[data-enable-blynk-notifications]"); const enable = () => void requestBrowserNotifications(); button?.addEventListener("click", enable); accountCard.after(card);
-    return () => { button?.removeEventListener("click", enable); card.remove(); };
-  }, [tab, language, notificationPermission]);
   useEffect(() => {
     const sentMessages = chat.filter((item) => item.from === "me");
     const bubbles = Array.from(document.querySelectorAll<HTMLDivElement>("div.pink-gradient.ml-auto"));
@@ -1041,7 +1084,7 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
     {toast && <div role="status" aria-live="polite" className="fixed bottom-24 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-start gap-3 rounded-2xl border border-pink-300/25 bg-[#19162af5] p-4 text-sm leading-5 text-white/90 shadow-2xl backdrop-blur-xl lg:bottom-8"><span aria-hidden="true" className="text-pink-300">ⓘ</span><p className="min-w-0 flex-1">{toast}</p><button type="button" onClick={() => setToast("")} aria-label={language === "es" ? "Cerrar aviso" : "Dismiss notification"} className="px-1 text-white/60">×</button></div>}
     {tab === "profile" && <div className="blynk-profile-toolbar fixed inset-x-0 top-[57px] z-40 border-b border-white/10 bg-[#090914]/95 px-4 py-2.5 shadow-lg backdrop-blur-xl"><div className="mx-auto flex max-w-xl items-center gap-2 overflow-x-auto pb-0.5"><label className="shrink-0 cursor-pointer rounded-xl border border-pink-300/30 bg-pink-400/10 px-3 py-2 text-xs font-bold text-pink-100 transition hover:bg-pink-400/20">▧ {language === "es" ? "Foto de fondo" : "Cover photo"}<input onChange={uploadCover} className="hidden" type="file" accept="image/*" /></label><button onClick={() => setPreviewingOwnProfile(true)} className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-white/85 transition hover:bg-white/10">◉ {language === "es" ? "Vista pública" : "Public view"}</button><button onClick={() => setPresentationOpen(true)} className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-white/85 transition hover:bg-white/10">▶ {language === "es" ? "Video" : "Video"}</button><button onClick={() => setBlockedListOpen(true)} className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-white/75 transition hover:bg-white/10">⊘ {language === "es" ? `Bloqueados (${blockedProfiles.length})` : `Blocked (${blockedProfiles.length})`}</button></div></div>}
     {matchRequests.some((request) => request.incoming && request.status === "pending") && <aside className="fixed bottom-[5.75rem] right-4 z-40 w-[min(19rem,calc(100vw-2rem))] rounded-3xl border border-white/15 bg-[#151525f5] p-4 shadow-2xl backdrop-blur-xl sm:bottom-6"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-widest text-pink-300">{language === "es" ? "Conexiones" : "Connections"}</p><p className="mt-1 text-sm font-black">{language === "es" ? "Nueva solicitud" : "New request"}</p></div><button aria-label={language === "es" ? "Actualizar solicitudes" : "Refresh requests"} onClick={() => void loadMatches()} className="rounded-full p-2 text-sm text-white/55 hover:bg-white/10">↻</button></div><div className="mt-3 space-y-2">{matchRequests.filter((request) => request.incoming && request.status === "pending").map((request) => <div key={request.id} className="rounded-2xl bg-white/5 p-3"><div className="flex items-center gap-3"><span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-amber-300 to-rose-500 font-bold">{request.otherAvatarUrl ? <img src={request.otherAvatarUrl} alt="" className="size-full object-cover" /> : request.otherName.slice(0, 1).toUpperCase()}</span><div className="min-w-0"><p className="truncate text-sm font-bold">{request.otherName}</p><p className="mt-0.5 text-xs text-white/50">{language === "es" ? "Quiere conectar contigo" : "Wants to connect"}</p></div></div><div className="mt-3 grid grid-cols-[auto_1fr] gap-2"><button aria-label={language === "es" ? "Rechazar solicitud" : "Decline request"} title={language === "es" ? "Rechazar" : "Decline"} onClick={() => void respondToMatch(request, "rejected")} className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-bold text-white/80 hover:bg-white/10">×</button><button onClick={() => setReviewingRequest(request)} className="pink-gradient rounded-xl py-2.5 text-xs font-bold">{language === "es" ? "Ver perfil y decidir" : "View profile & decide"} →</button></div></div>)}</div></aside>}
-    {tab === "profile" && <section className="fixed inset-x-0 bottom-0 top-[57px] z-20 overflow-y-auto bg-[#090914] px-4 pb-32 pt-6 lg:px-6"><div className="mx-auto max-w-xl space-y-4"><article className="blynk-card overflow-hidden rounded-[2rem]"><div className="h-32 bg-gradient-to-r from-pink-500 via-fuchsia-600 to-violet-700" style={myProfile.coverUrl ? { backgroundImage: `linear-gradient(#09091433, #09091455), url(${myProfile.coverUrl})`, backgroundPosition: "center", backgroundSize: "cover" } : undefined} /><div className="px-6 pb-6"><div className="-mt-12 flex items-end justify-between"><label className="group relative grid size-24 cursor-pointer place-items-center overflow-hidden rounded-3xl border-4 border-[#151525] bg-gradient-to-br from-amber-300 to-rose-500 text-3xl font-black"><input onChange={uploadAvatar} className="hidden" type="file" accept="image/*" />{myProfile.avatarUrl ? <img src={myProfile.avatarUrl} alt="Foto de perfil" className="size-full object-cover" /> : (myProfile.displayName || "B").slice(0, 1).toUpperCase()}<span className="absolute inset-x-1 bottom-1 rounded-lg bg-black/65 py-1 text-center text-[10px] font-bold opacity-0 transition group-hover:opacity-100">Cambiar</span></label><button onClick={() => setEditingProfile(true)} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold">✎ {t.edit}</button></div><h1 className="mt-4 text-3xl font-black">{myProfile.displayName || "Cargando…"}</h1><p className="mt-1 text-sm text-pink-300">@{myProfile.username || "sin_usuario"}</p><p className="mt-1 text-sm text-white/55">{myProfile.email}</p><p className="mt-5 text-sm leading-6 text-white/80">{myProfile.bio || (language === "es" ? "Completa tu presentación para conectar mejor." : "Complete your bio to connect better.")}</p></div></article><article className="blynk-card rounded-3xl p-5"><div className="flex items-center justify-between gap-3"><div><h2 className="font-black">{t.gallery}</h2><p className="mt-1 text-xs text-white/50">{language === "es" ? "Hasta 6 fotos o videos visibles en tu perfil." : "Up to 6 photos or videos visible on your profile."}</p></div><label className="soft-button cursor-pointer rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">+ {t.addMedia}<input onChange={uploadMedia} className="hidden" multiple type="file" accept="image/*,video/*" /></label></div><div className="mt-4 grid grid-cols-3 gap-2">{media.map((source) => <div key={source} className="aspect-square overflow-hidden rounded-xl bg-white/5">{/\.(mp4|webm|mov)(\?|$)/i.test(source) ? <video src={source} className="size-full object-cover" muted playsInline /> : <img src={source} alt="Contenido del perfil" className="size-full object-cover" />}</div>)}{media.length === 0 && <p className="col-span-3 rounded-2xl border border-dashed border-white/15 p-7 text-center text-sm text-white/45">{language === "es" ? "Agrega fotos o videos para que otras personas te conozcan." : "Add photos or videos so others can get to know you."}</p>}</div></article><article className="blynk-card rounded-3xl p-5"><h2 className="font-black">{language === "es" ? "Privacidad y cuenta" : "Privacy and account"}</h2><p className="mt-2 text-sm text-white/55">{language === "es" ? "Tu nombre, usuario, foto y galería se guardan para esta cuenta." : "Your name, username, photo and gallery are saved for this account."}</p><button onClick={() => void signOut()} className="mt-5 text-sm font-bold text-rose-300">↪ {t.logOut}</button></article></div></section>}
+    {tab === "profile" && <section className="fixed inset-x-0 bottom-0 top-[57px] z-20 overflow-y-auto bg-[#090914] px-4 pb-32 pt-6 lg:px-6"><div className="mx-auto max-w-xl space-y-4"><article className="blynk-card overflow-hidden rounded-[2rem]"><div className="h-32 bg-gradient-to-r from-pink-500 via-fuchsia-600 to-violet-700" style={myProfile.coverUrl ? { backgroundImage: `linear-gradient(#09091433, #09091455), url(${myProfile.coverUrl})`, backgroundPosition: "center", backgroundSize: "cover" } : undefined} /><div className="px-6 pb-6"><div className="-mt-12 flex items-end justify-between"><label className="group relative grid size-24 cursor-pointer place-items-center overflow-hidden rounded-3xl border-4 border-[#151525] bg-gradient-to-br from-amber-300 to-rose-500 text-3xl font-black"><input onChange={uploadAvatar} className="hidden" type="file" accept="image/*" />{myProfile.avatarUrl ? <img src={myProfile.avatarUrl} alt="Foto de perfil" className="size-full object-cover" /> : (myProfile.displayName || "B").slice(0, 1).toUpperCase()}<span className="absolute inset-x-1 bottom-1 rounded-lg bg-black/65 py-1 text-center text-[10px] font-bold opacity-0 transition group-hover:opacity-100">Cambiar</span></label><button onClick={() => setEditingProfile(true)} className="rounded-xl border border-white/15 px-4 py-2 text-sm font-bold">✎ {t.edit}</button></div><h1 className="mt-4 text-3xl font-black">{myProfile.displayName || "Cargando…"}</h1><p className="mt-1 text-sm text-pink-300">@{myProfile.username || "sin_usuario"}</p><p className="mt-1 text-sm text-white/55">{myProfile.email}</p><p className="mt-5 text-sm leading-6 text-white/80">{myProfile.bio || (language === "es" ? "Completa tu presentación para conectar mejor." : "Complete your bio to connect better.")}</p></div></article><article className="blynk-card rounded-3xl p-5"><div className="flex items-center justify-between gap-3"><div><h2 className="font-black">{t.gallery}</h2><p className="mt-1 text-xs text-white/50">{language === "es" ? "Hasta 6 fotos o videos visibles en tu perfil." : "Up to 6 photos or videos visible on your profile."}</p></div><label className="soft-button cursor-pointer rounded-xl bg-white/10 px-3 py-2 text-xs font-bold">+ {t.addMedia}<input onChange={uploadMedia} className="hidden" multiple type="file" accept="image/*,video/*" /></label></div><div className="mt-4 grid grid-cols-3 gap-2">{media.map((source) => <div key={source} className="aspect-square overflow-hidden rounded-xl bg-white/5">{/\.(mp4|webm|mov)(\?|$)/i.test(source) ? <video src={source} className="size-full object-cover" muted playsInline /> : <img src={source} alt="Contenido del perfil" className="size-full object-cover" />}</div>)}{media.length === 0 && <p className="col-span-3 rounded-2xl border border-dashed border-white/15 p-7 text-center text-sm text-white/45">{language === "es" ? "Agrega fotos o videos para que otras personas te conozcan." : "Add photos or videos so others can get to know you."}</p>}</div></article><PushSettings spanish={language === "es"} enabled={pushActive} busy={pushBusy} supported={notificationPermission !== "unsupported"} notice={pushNotice} onEnable={() => void requestBrowserNotifications()} onDisable={() => void disablePush()} onTest={() => void testPush()} /><article className="blynk-card rounded-3xl p-5"><h2 className="font-black">{language === "es" ? "Privacidad y cuenta" : "Privacy and account"}</h2><p className="mt-2 text-sm text-white/55">{language === "es" ? "Tu nombre, usuario, foto y galería se guardan para esta cuenta." : "Your name, username, photo and gallery are saved for this account."}</p><button onClick={() => void signOut()} className="mt-5 text-sm font-bold text-rose-300">↪ {t.logOut}</button></article></div></section>}
     {editingProfile && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><form onSubmit={saveProfile} className="blynk-card max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-[2rem] p-6"><div className="flex items-center justify-between"><h2 className="text-xl font-black">{t.edit} {t.profile}</h2><button type="button" onClick={() => setEditingProfile(false)} className="rounded-full p-2 text-white/60">×</button></div><label className="mt-5 block text-sm font-bold">{language === "es" ? "Nombre" : "Name"}<input value={myProfile.displayName} onChange={(event) => setMyProfile((profile) => ({ ...profile, displayName: event.target.value }))} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none" /></label><label className="mt-4 block text-sm font-bold">{language === "es" ? "Usuario" : "Username"}<input value={myProfile.username} onChange={(event) => setMyProfile((profile) => ({ ...profile, username: event.target.value }))} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none" /></label><label className="mt-4 block text-sm font-bold">{language === "es" ? "Ciudad" : "City"}<input value={myProfile.city} onChange={(event) => setMyProfile((profile) => ({ ...profile, city: event.target.value }))} placeholder={language === "es" ? "Tu ciudad" : "Your city"} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none" /></label><label className="mt-4 block text-sm font-bold">{language === "es" ? "Qué buscas" : "What are you looking for"}<select value={myProfile.connectionIntent} onChange={(event) => setMyProfile((profile) => ({ ...profile, connectionIntent: event.target.value }))} className="mt-2 w-full rounded-xl border border-white/15 bg-black/20 px-4 py-3 outline-none"><option value="">{language === "es" ? "Seleccionar" : "Select"}</option><option value="Intentional dating">{language === "es" ? "Citas intencionales" : "Intentional dating"}</option><option value="New friendships">{language === "es" ? "Nuevas amistades" : "New friendships"}</option><option value="Open to meeting people">{language === "es" ? "Conocer personas" : "Open to meeting people"}</option></select></label><fieldset className="mt-4"><legend className="text-sm font-bold">{language === "es" ? "Intereses (hasta 5)" : "Interests (up to 5)"}</legend><div className="mt-2 flex flex-wrap gap-2">{["Art", "Coffee", "Fitness", "Food", "Music", "Movies", "Outdoors", "Travel"].map((interest) => <button key={interest} type="button" onClick={() => setMyProfile((profile) => ({ ...profile, interests: profile.interests.includes(interest) ? profile.interests.filter((value) => value !== interest) : [...profile.interests, interest].slice(0, 5) }))} className={`rounded-full border px-3 py-2 text-xs font-bold ${myProfile.interests.includes(interest) ? "border-pink-400 bg-pink-400/15 text-pink-100" : "border-white/10 bg-white/5 text-white/65"}`}>{interest}</button>)}</div></fieldset><label className="mt-4 block text-sm font-bold">{language === "es" ? "Biografía" : "Bio"}<textarea value={myProfile.bio} onChange={(event) => setMyProfile((profile) => ({ ...profile, bio: event.target.value }))} maxLength={500} className="mt-2 min-h-28 w-full rounded-xl border border-white/15 bg-black/20 p-4 outline-none" /></label><button disabled={savingProfile} className="pink-gradient soft-button mt-5 w-full rounded-xl py-3.5 font-bold disabled:opacity-60">{savingProfile ? (language === "es" ? "Guardando…" : "Saving…") : (language === "es" ? "Guardar cambios" : "Save changes")}</button></form></div>}
     {tab === "profile" && <nav aria-label="Navegación del perfil" className="fixed inset-x-4 bottom-5 z-40 mx-auto flex max-w-xl gap-2 rounded-2xl border border-white/15 bg-[#1b1a2b]/95 p-2 shadow-2xl backdrop-blur lg:bottom-7"><button onClick={() => setTab("discover")} className="flex-1 rounded-xl px-3 py-2 text-xs font-bold text-pink-200 hover:bg-white/10">⌕ {t.discover}</button><button onClick={() => setTab("community")} className="flex-1 rounded-xl px-3 py-2 text-xs font-bold text-pink-200 hover:bg-white/10">◎ {t.community}</button><button onClick={() => setTab("messages")} className="flex-1 rounded-xl px-3 py-2 text-xs font-bold text-pink-200 hover:bg-white/10">✉ {t.messages}</button></nav>}
     {presentationOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4 backdrop-blur-sm"><section role="dialog" aria-modal="true" aria-label="Video de presentación" className="blynk-card w-full max-w-lg rounded-[2rem] p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-widest text-pink-300">Tu perfil</p><h2 className="mt-1 text-2xl font-black">Video de presentación</h2><p className="mt-2 text-sm text-white/55">Este video se mostrará a las personas antes de que decidan enviarte una solicitud.</p></div><button onClick={() => setPresentationOpen(false)} className="rounded-full p-2 text-white/60">×</button></div>{presentationVideo && <video src={presentationVideo} className="mt-5 aspect-video w-full rounded-2xl bg-black object-cover" controls muted playsInline />}<label className="mt-5 flex cursor-pointer items-center justify-center rounded-2xl border border-dashed border-pink-300/40 bg-pink-400/5 px-4 py-5 text-sm font-bold text-pink-100">▣ Elegir video<input onChange={selectPresentationVideo} className="hidden" type="file" accept="video/mp4,video/webm,video/quicktime" /></label><button disabled={!presentationVideoFile || uploadingPresentation} onClick={() => void savePresentationVideo()} className="pink-gradient soft-button mt-4 w-full rounded-2xl py-3.5 font-bold disabled:cursor-not-allowed disabled:opacity-50">{uploadingPresentation ? "Subiendo…" : "Publicar como video de presentación"}</button></section></div>}

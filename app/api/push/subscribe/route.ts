@@ -27,3 +27,14 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: "Could not save this device." }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
+export async function DELETE(request: Request) {
+  const user = await getPushUser(request);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await request.json().catch(() => null) as { endpoint?: string } | null;
+  if (!body?.endpoint) return NextResponse.json({ error: "Missing device." }, { status: 400 });
+  const { error } = await getServiceSupabase().from("push_subscriptions").delete()
+    .eq("user_id", user.id).eq("endpoint", body.endpoint);
+  if (error) return NextResponse.json({ error: "Could not remove this device." }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}

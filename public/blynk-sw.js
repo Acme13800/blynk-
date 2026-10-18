@@ -1,5 +1,6 @@
 self.addEventListener("push", (event) => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
   event.waitUntil(self.registration.showNotification(data.title || "Blynk", {
     body: data.body || "You have a new update.",
     icon: "/blynk-eye.svg",
