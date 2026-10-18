@@ -1,6 +1,44 @@
 # Progreso de Blynk
 
-Última actualización: 16 de octubre de 2026.
+Última actualización: 17 de octubre de 2026.
+
+## Punto de continuación — 17 de octubre de 2026
+
+El usuario pidió detener el trabajo aquí y retomarlo después.
+
+### Confirmado por el usuario
+
+- Se pudo reportar un perfil, revisar el motivo en Admin y suspender la cuenta.
+- Funcionó el recorrido de solicitud de revisión, aprobación y restauración.
+- Prueba en Android: no llegó la notificación en segundo plano. Web Push sigue pendiente; no marcarlo como resuelto.
+
+### Implementado y registrado en Git
+
+- `c376fee`: controles de activar, desactivar y enviar prueba en Perfil; desactivación persistente en este navegador; registro real del dispositivo determina el estado On/Off.
+- `006ec47`: migración `033_push_server_access.sql` para tabla privada de dispositivos y permisos de `service_role`; diagnóstico del fallo de registro con categorías seguras.
+- Nuevo componente `app/components/PushSettings.tsx`, endpoint de prueba `app/api/push/test/route.ts` y DELETE en `app/api/push/subscribe/route.ts`.
+- Revisión de configuración completa del servidor; recuperación de suscripciones ante cambio de llave pública VAPID.
+- TypeScript y ESLint pasaron durante la implementación. La entrega real no se ha validado en Android.
+- Al revisar antes de guardar estas notas, HEAD y la referencia local origin/main coincidían en `006ec47`. No se hizo fetch ni auditoría directa de Vercel.
+
+### Bloqueo actual y primer paso al volver
+
+La captura más reciente muestra: `Supabase rejected the server key. Check SUPABASE_SERVICE_ROLE_KEY in Vercel.`
+
+El proceso llega al servidor pero Supabase rechaza la credencial del servidor. No continuar modificando SQL o interfaz sin atender este diagnóstico. No se inspeccionaron ni guardaron valores de claves en estas notas.
+
+1. Abrir API Keys del proyecto Supabase `nykhmbvmjrnxfdhaulyx`.
+2. El usuario debe copiar una clave Secret válida o la service_role antigua de ese mismo proyecto, sin compartirla en el chat.
+3. En Vercel, proyecto Blynk, Settings > Environment Variables, reemplazar `SUPABASE_SERVICE_ROLE_KEY` para Production. Esta variable es privada del servidor; nunca usar un prefijo NEXT_PUBLIC.
+4. Hacer Redeploy del despliegue de producción para aplicar la variable.
+5. En Android, abrir Blynk > Perfil > Enable notifications. Cuando registre el dispositivo, pulsar Send test.
+6. Si la prueba llega, probar un mensaje de otra cuenta con Blynk en segundo plano, verificar apagado/encendido y persistencia al recargar.
+
+Enlaces: https://supabase.com/dashboard/project/nykhmbvmjrnxfdhaulyx/settings/api-keys y https://blynk-beta.vercel.app/.
+
+Después de resolver Web Push, continuar los pendientes de lanzamiento indicados en el registro anterior y en `docs/QA_RELEASE_CHECKLIST.md`.
+
+## Registro anterior
 
 ## Punto de continuación — 16 de octubre de 2026
 
