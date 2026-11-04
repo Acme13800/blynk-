@@ -1,6 +1,68 @@
 # Progreso de Blynk
 
-Última actualización: 17 de octubre de 2026.
+Última actualización: 3 de noviembre de 2026.
+
+## Punto de continuación — 3 de noviembre de 2026
+
+El usuario pidió guardar y detener el trabajo aquí.
+
+### Seguridad: resultados confirmados mediante capturas del usuario
+
+- El correo de Supabase alertaba de RLS desactivada. La consulta encontró
+  `posts` (3 políticas) y `profiles` (4 políticas) con RLS desactivada.
+- Se ejecutó 034: ambas tablas muestran RLS `true`. Se conservaron los datos y
+  las políticas. No afirmar que esto completa una auditoría de columnas privadas.
+- El usuario exportó las 15 advertencias del Security Advisor para revisión.
+- Se ejecutó 035: acceso a swipes limitado al dueño por swiper_id; listado
+  público de blynk-media reemplazado por lectura de la carpeta del dueño;
+  permisos RPC directos de funciones internas retirados. La captura confirmó
+  false/false en tres funciones trigger, e is_blynk_admin anon=false/auth=true.
+- Se ejecutó 036: cinco funciones privilegiadas movidas a blynk_private,
+  preservando las funciones originales y dependencias de RLS; referencias de
+  funciones trigger redirigidas. Solo public.blynk_can_contact permanece como
+  wrapper SECURITY INVOKER para la llamada RPC existente de la app.
+- La captura final del Security Advisor muestra 0 errores, 1 advertencia y
+  1 sugerencia informativa. No equivale a certificación integral de seguridad.
+
+### Advertencia e información restantes
+
+- Leaked Password Protection Disabled: requiere activar protección en Supabase
+  Pro o superior. El proyecto sigue en Free. No se cambió el plan ni se activó.
+- RLS Enabled No Policy en public.push_subscriptions: intencional, tabla privada
+  gestionada por servidor con service_role. No otorgar acceso directo a anon o
+  authenticated ni desactivar RLS para eliminar esta información.
+
+### Archivos locales que deben guardarse en Git
+
+- supabase/migrations/034_restore_posts_profiles_rls.sql
+- supabase/migrations/035_security_advisor_hardening.sql
+- supabase/migrations/036_private_security_helpers.sql
+- docs/SECURITY_ADVISOR_REVIEW.md
+- Este resumen, docs/PROGRESO_BLYNK.md.
+
+### Retomar en este orden
+
+1. Probar perfil, publicación/subida de foto, mensaje, bloqueo/desbloqueo y
+   Admin tras 036. Las pruebas posteriores a los cambios aún no se confirmaron.
+2. Confirmar en Data API Exposed schemas que blynk_private NO esté expuesto.
+   La migración comprueba el setting SQL cuando está disponible, pero no se
+   inspeccionó directamente la configuración del Dashboard.
+3. Resolver Web Push: sigue pendiente SUPABASE_SERVICE_ROLE_KEY rechazada en
+   Vercel. Reemplazarla privadamente con una clave válida del mismo proyecto,
+   redeploy y probar Enable notifications / Send test en Android. Nunca pedir
+   que se pegue una clave en el chat.
+4. Pendientes de privacidad para lanzamiento: adjuntos del chat siguen usando
+   enlaces de bucket público; planificar almacenamiento privado y autorización
+   sin romper los enlaces existentes. Revisar columnas expuestas de profiles.
+5. Seguir QA_RELEASE_CHECKLIST.md y completar eliminación segura de cuenta y
+   datos, textos legales reales y revisión final de traducciones.
+
+No volver a ejecutar migraciones antiguas 009–035 después de 036 sin adaptarlas:
+referencian funciones públicas que ahora son privadas y podrían recrear accesos.
+Las correcciones actuales fueron SQL; no requieren despliegue de Vercel para
+entrar en vigor. Guardar las migraciones en Git conserva el registro.
+
+## Registro anterior
 
 ## Punto de continuación — 17 de octubre de 2026
 
