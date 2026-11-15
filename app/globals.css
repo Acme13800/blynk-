@@ -64,6 +64,46 @@ button { cursor: pointer; }
   object-fit: cover;
 }
 
+.blynk-discover-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: .65rem;
+}
+.blynk-discover-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 3.25rem;
+  border-radius: 1rem;
+  padding: .625rem .5rem;
+  font-size: .875rem;
+  font-weight: 700;
+  line-height: 1.25;
+  transition: background-color .18s ease, border-color .18s ease, filter .18s ease;
+}
+.blynk-discover-actions > button > svg {
+  flex-shrink: 0;
+}
+.blynk-discover-pass {
+  border: 1px solid rgb(255 255 255 / .22);
+  background-color: #1b1a2b;
+  color: #f5f1fb;
+}
+.blynk-discover-pass:hover,
+.blynk-discover-pass:active {
+  border-color: rgb(255 255 255 / .36);
+  background-color: #29263b;
+}
+.blynk-discover-request:hover,
+.blynk-discover-request:active {
+  filter: brightness(1.08);
+}
+.blynk-discover-actions > button:focus-visible {
+  outline: 2px solid #f9a8d4;
+  outline-offset: -4px;
+}
+
 @keyframes blynk-video-enter {
   from { opacity: .35; transform: translateY(7%); }
   to { opacity: 1; transform: translateY(0); }
@@ -237,10 +277,14 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
   }
   .blynk-video-feed > div.mb-3,
   .blynk-video-feed > button.mb-3 { display: none; }
+  .blynk-discover-layout {
+    padding-top: .75rem;
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
   .blynk-video-feed > article {
     border-radius: 0 !important;
     aspect-ratio: auto !important;
-    height: max(20rem, calc(100dvh - 14rem - env(safe-area-inset-bottom)));
+    height: max(16rem, calc(100dvh - 16rem - env(safe-area-inset-bottom)));
     margin-left: calc(50% - 50vw);
     max-width: none !important;
     min-height: 0;
@@ -254,9 +298,8 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
     text-align: left;
   }
   .blynk-video-feed > article + p { display: none; }
-  .blynk-video-feed > article ~ div.grid {
+  .blynk-discover-actions {
     margin: .75rem 1rem 0;
-    position: static;
   }
   .blynk-video-feed > article > .blynk-profile-safety {
     left: auto;
