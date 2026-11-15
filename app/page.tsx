@@ -15,6 +15,7 @@ type StoredLike = { post_id: string };
 type ChatMessage = { id: string; from: string; text: string; createdAt: string; readAt?: string | null; mediaUrl?: string; mediaType?: "image" | "video" };
 type InboxPreview = { content: string; createdAt: string; unread: boolean };
 type DiscoverPerson = { id: string; name: string; age: number; place: string; emoji: string; accent: string; intro: string; tags: string[]; intent?: string; video: string; avatarUrl?: string; likeCount?: number; likedByMe?: boolean };
+type DiscoverPass = { profileId: string; userId: string | null };
 type MatchRequest = { id: string; otherId: string; otherName: string; otherBio?: string; otherAvatarUrl?: string; otherCoverUrl?: string; otherVideoUrl?: string; incoming: boolean; status: "pending" | "accepted" | "rejected" };
 type SafetyAction = { kind: "report" | "block"; targetId: string; targetName: string; closeConversation?: boolean };
 type AccountNotice = { id: string; notice_type: "profile_suspended" | "profile_restored" | "appeal_denied" };
@@ -37,7 +38,8 @@ export default function BlynkHome() {
   const [language, setLanguage] = useState<Language>("en");
   const [personIndex, setPersonIndex] = useState(0);
   const [skippedProfileIds, setSkippedProfileIds] = useState<Set<string>>(() => new Set());
-  const [lastPass, setLastPass] = useState<{ profileId: string; userId: string | null } | null>(null);
+  const [lastPass, setLastPass] = useState<DiscoverPass | null>(null);
+  const [savedPassOwner, setSavedPassOwner] = useState<string | null>(null);
   const [passBusy, setPassBusy] = useState(false);
   const passInFlight = useRef(false);
   const skipRevision = useRef(0);
@@ -107,6 +109,14 @@ export default function BlynkHome() {
   const discoverPeople = filteredPeople.filter((profile) => !skippedProfileIds.has(profile.id));
   const availableInterests = [...new Set(candidatePeople.filter((profile) => !skippedProfileIds.has(profile.id)).flatMap((profile) => profile.tags))].sort();
   const person = discoverPeople[personIndex % discoverPeople.length];
+  const visibleLastPass = lastPass && filteredPeople.some((profile) => profile.id === lastPass.profileId) ? lastPass : null;
+  const latestSavedPassId = !person && savedPassOwner
+    ? [...skippedProfileIds].reverse().find((id) => filteredPeople.some((profile) => profile.id === id))
+    : undefined;
+  const recoverablePass = visibleLastPass ?? (latestSavedPassId && savedPassOwner
+    ? { profileId: latestSavedPassId, userId: savedPassOwner }
+    : null);
+  const canExpandDiscover = candidatePeople.some((profile) => profile.age >= 18 && profile.age <= 80 && !filteredPeople.includes(profile));
   const conversationName = activeMatch?.otherName || (language === "es" ? "Selecciona un match" : "Select a match");
   // A confirmed match can start a conversation before either person sends a message.
   const hasReceivedMessage = Boolean(activeMatch) || chat.some((item) => item.from !== "me");
@@ -289,7 +299,12 @@ export default function BlynkHome() {
         undoable = Boolean(data);
       }
       skipRevision.current += 1;
-      setSkippedProfileIds((ids) => new Set(ids).add(person.id));
+      setSkippedProfileIds((ids) => {
+        const updated = new Set(ids);
+        if (undoable) updated.delete(person.id);
+        return updated.add(person.id);
+      });
+      if (skippedBy) setSavedPassOwner(skippedBy);
       setLastPass(undoable ? { profileId: person.id, userId: skippedBy } : null);
       const removedIndex = discoverPeople.findIndex((profile) => profile.id === person.id);
       setPersonIndex((index) => {
@@ -303,29 +318,29 @@ export default function BlynkHome() {
       setPassBusy(false);
     }
   };
-  const undoPass = async () => {
-    if (!lastPass || passInFlight.current) return;
+  const undoPass = async (pass: DiscoverPass) => {
+    if (passInFlight.current) return;
     passInFlight.current = true;
     setPassBusy(true);
     try {
-      if (lastPass.userId) {
+      if (pass.userId) {
         if (!supabase) return;
         const { data: { user } } = await supabase.auth.getUser();
-        if (user?.id !== lastPass.userId) throw new Error("Account changed");
+        if (user?.id !== pass.userId) throw new Error("Account changed");
         const { data, error } = await supabase.from("profile_skips").delete()
-          .eq("user_id", user.id).eq("profile_id", lastPass.profileId)
+          .eq("user_id", user.id).eq("profile_id", pass.profileId)
           .select("profile_id").maybeSingle();
         if (error || !data) throw new Error("Could not remove the saved pass");
       }
       skipRevision.current += 1;
       setSkippedProfileIds((ids) => {
         const updated = new Set(ids);
-        updated.delete(lastPass.profileId);
+        updated.delete(pass.profileId);
         return updated;
       });
       const restoredIndex = filteredPeople
-        .filter((profile) => !skippedProfileIds.has(profile.id) || profile.id === lastPass.profileId)
-        .findIndex((profile) => profile.id === lastPass.profileId);
+        .filter((profile) => !skippedProfileIds.has(profile.id) || profile.id === pass.profileId)
+        .findIndex((profile) => profile.id === pass.profileId);
       if (restoredIndex >= 0) setPersonIndex(restoredIndex);
       setLastPass(null);
       notify(language === "es" ? "Descarte deshecho." : "Pass undone.");
@@ -824,7 +839,9 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
       if (!user) return;
       const { data } = await client.from("profiles").select("id, display_name, bio, avatar_url, presentation_video_url, city, birth_date, connection_intent, interests, suspended_at, email_verified_at").neq("id", user.id).not("email_verified_at", "is", null).limit(50);
       if (!data?.length) return;
-      const { data: skipRows } = await client.from("profile_skips").select("profile_id").eq("user_id", user.id);
+      const { data: skipRows } = await client.from("profile_skips").select("profile_id").eq("user_id", user.id)
+        .in("profile_id", data.map((profile) => profile.id))
+        .order("created_at", { ascending: true }).order("profile_id", { ascending: true });
       const { data: blockRows } = await client.from("blocks").select("blocked_id").eq("blocker_id", user.id);
       const skippedIds = new Set((skipRows || []).map((skip) => skip.profile_id));
       const blockedIds = new Set((blockRows || []).map((block) => block.blocked_id));
@@ -837,7 +854,10 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
       const likeCounts = (likeRows || []).reduce<Record<string, number>>((counts, like) => ({ ...counts, [like.profile_id]: (counts[like.profile_id] || 0) + 1 }), {});
       const myLikes = new Set((likeRows || []).filter((like) => like.user_id === user.id).map((like) => like.profile_id));
       if (cancelled) return;
-      if (revision === skipRevision.current && skipRows) setSkippedProfileIds(skippedIds);
+      if (revision === skipRevision.current && skipRows) {
+        setSkippedProfileIds(skippedIds);
+        setSavedPassOwner(user.id);
+      }
       setRegisteredPeople(visibleProfiles.map((profile, index) => ({ id: profile.id, name: profile.display_name || "Blynk user", age: profileAge(profile.birth_date), place: profile.city || (language === "es" ? "Ciudad no especificada" : "City not specified"), emoji: "✦", accent: accents[index % accents.length], intro: profile.bio || (language === "es" ? "Perfil listo para conectar." : "A profile ready to connect."), tags: profile.interests?.length ? profile.interests : [language === "es" ? "Nuevo" : "New"], intent: profile.connection_intent || "", video: profile.presentation_video_url || "", avatarUrl: profile.avatar_url || "", likeCount: likeCounts[profile.id] || 0, likedByMe: myLikes.has(profile.id) })));
     }
     void loadRegisteredPeople();
@@ -1127,12 +1147,32 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
           <button onClick={() => setFiltersOpen((value) => !value)} className="mb-3 flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold"><span>⌘ {language === "es" ? "Filtros" : "Filters"}</span><span className="text-pink-200">{filtersOpen ? "−" : "+"}</span></button>
           {filtersOpen && <div className="mb-4 space-y-3 rounded-2xl border border-white/10 bg-[#171526] p-4 text-sm"><div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold text-white/65">{language === "es" ? "Edad mínima" : "Minimum age"}<input value={ageRange.min} type="number" min="18" max="80" onChange={(event) => { const min = Math.min(Number(event.target.value) || 18, ageRange.max); setAgeRange({ ...ageRange, min }); setPersonIndex(0); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none" /></label><label className="text-xs font-bold text-white/65">{language === "es" ? "Edad máxima" : "Maximum age"}<input value={ageRange.max} type="number" min={ageRange.min} max="80" onChange={(event) => { const max = Math.max(Number(event.target.value) || 60, ageRange.min); setAgeRange({ ...ageRange, max }); setPersonIndex(0); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none" /></label></div>{discoverMode === "forYou" && <label className="block text-xs font-bold text-white/65">{language === "es" ? "Ciudad" : "City"}<input value={cityFilter} onChange={(event) => { setCityFilter(event.target.value); setPersonIndex(0); }} placeholder={language === "es" ? "Todas las ciudades" : "All cities"} className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none" /></label>}<div className="grid grid-cols-2 gap-3"><label className="text-xs font-bold text-white/65">{language === "es" ? "Interés" : "Interest"}<select value={interestFilter} onChange={(event) => { setInterestFilter(event.target.value); setPersonIndex(0); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none"><option value="">{language === "es" ? "Todos" : "All"}</option>{availableInterests.map((interest) => <option value={interest} key={interest}>{interest}</option>)}</select></label><label className="text-xs font-bold text-white/65">{language === "es" ? "Intención" : "Intent"}<select value={intentFilter} onChange={(event) => { setIntentFilter(event.target.value); setPersonIndex(0); }} className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-white outline-none"><option value="">{language === "es" ? "Todas" : "All"}</option><option value="Intentional dating">{language === "es" ? "Citas intencionales" : "Intentional dating"}</option><option value="New friendships">{language === "es" ? "Nuevas amistades" : "New friendships"}</option><option value="Open to meeting people">{language === "es" ? "Conocer personas" : "Open to meeting people"}</option></select></label></div><button onClick={() => { setAgeRange({ min: 18, max: 60 }); setCityFilter(""); setInterestFilter(""); setIntentFilter(""); setPersonIndex(0); }} className="text-xs font-bold text-pink-200">{language === "es" ? "Restablecer filtros" : "Reset filters"}</button></div>}
           {discoverMode === "nearby" && !myProfile.city && <p className="mb-3 rounded-2xl border border-pink-300/20 bg-pink-400/10 p-3 text-center text-xs text-pink-100">{language === "es" ? "Añade tu ciudad en Perfil para usar Cerca." : "Add your city in Profile to use Nearby."}</p>}
-          {lastPass && <div className="blynk-discover-undo mb-3 flex min-h-12 items-center gap-2 rounded-2xl border border-pink-200/25 bg-[#211b30] px-3 text-sm">
+          {person && visibleLastPass && <div className="blynk-discover-undo flex min-h-12 items-center gap-2 rounded-2xl border border-pink-200/25 bg-[#211b30] px-3 text-sm">
             <p role="status" className="min-w-0 flex-1 font-semibold text-white/90">{language === "es" ? "Perfil descartado" : "Profile passed"}</p>
-            <button type="button" onClick={() => void undoPass()} disabled={passBusy} className="min-h-11 rounded-lg px-2 font-bold text-pink-200 hover:text-white focus-visible:outline-2 focus-visible:outline-pink-300 disabled:opacity-50">{language === "es" ? "Deshacer" : "Undo"}</button>
+            <button type="button" onClick={() => void undoPass(visibleLastPass)} disabled={passBusy} className="min-h-11 rounded-lg px-2 font-bold text-pink-200 hover:text-white focus-visible:outline-2 focus-visible:outline-pink-300 disabled:opacity-50">{language === "es" ? "Deshacer" : "Undo"}</button>
             <button type="button" onClick={() => setLastPass(null)} disabled={passBusy} aria-label={language === "es" ? "Cerrar aviso" : "Dismiss notice"} className="grid size-11 shrink-0 place-items-center rounded-lg text-lg text-white/65 hover:text-white focus-visible:outline-2 focus-visible:outline-pink-300 disabled:opacity-50">×</button>
           </div>}
-          {!person ? <div className="blynk-card grid aspect-[9/14] place-items-center rounded-[2rem] p-8 text-center"><div><span className="text-4xl">⌕</span><h2 className="mt-4 text-xl font-black">{language === "es" ? "No hay perfiles con estos filtros" : "No profiles match these filters"}</h2><p className="mt-2 text-sm leading-6 text-white/55">{language === "es" ? "Prueba ampliando tu edad, ciudad, intereses o intención." : "Try expanding your age, city, interests or intent."}</p></div></div> : <><article onClick={() => void openPublicProfile(person)} className="blynk-card relative aspect-[9/14] cursor-pointer overflow-hidden rounded-[2rem]" aria-label={`${person.name}, ${person.age}`}>{person.video ? <video key={person.id} className="absolute inset-0 size-full object-cover" src={person.video} autoPlay muted loop playsInline /> : person.avatarUrl ? <img src={person.avatarUrl} alt={`Photo of ${person.name}`} className="absolute inset-0 size-full object-cover" /> : <div className={`absolute inset-0 grid place-items-center bg-gradient-to-br text-7xl ${person.accent}`}>{person.emoji}</div>}<div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#080812]/90 via-[#080812]/35 to-transparent" /><button onClick={(event) => void toggleProfileLike(event)} className={`soft-button absolute right-4 top-4 flex min-w-14 items-center justify-center gap-1 rounded-full border px-3 py-2 text-sm font-bold backdrop-blur ${person.likedByMe ? "border-pink-300 bg-pink-500/35 text-pink-100" : "border-white/15 bg-black/35 text-white"}`} aria-label={language === "es" ? "Me gusta" : "Like"}>{person.likedByMe ? "♥" : "♡"}<span>{person.likeCount || 0}</span></button><div className="blynk-discover-caption absolute inset-x-0 bottom-0 p-6"><span className="mb-3 inline-flex rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-100">● ONLINE</span><h1 className="text-3xl font-black">{person.name}, {person.age}</h1><p className="mt-2 text-sm leading-6 text-white/85">{person.intro}</p><div className="mt-4 flex flex-wrap gap-2">{person.tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs font-semibold">{tag}</span>)}</div></div></article><p className="animate-pulse py-3 text-center text-xs text-white/45">↑ {t.swipe}</p><div className="blynk-discover-actions">
+          {!person ? (
+            <section className="blynk-card grid aspect-[9/14] place-items-center rounded-[2rem] p-6 text-center" aria-labelledby="discover-empty-title">
+              <div className="w-full max-w-xs">
+                <span aria-hidden="true" className="text-4xl text-pink-200">⌕</span>
+                <h2 id="discover-empty-title" className="mt-4 text-xl font-black">
+                  {recoverablePass || !canExpandDiscover ? (language === "es" ? "No quedan perfiles por ver" : "No more profiles to show") : (language === "es" ? "No hay perfiles con estos filtros" : "No profiles match these filters")}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-white/65">
+                  {recoverablePass ? (language === "es" ? "Puedes volver a ver el último perfil que pasaste." : "You can take another look at the last profile you passed on.") : canExpandDiscover ? (language === "es" ? "Amplía tu búsqueda para ver más perfiles." : "Broaden your search to see more profiles.") : (language === "es" ? "Vuelve más tarde para ver si hay nuevos perfiles." : "Check back later for new profiles.")}
+                </p>
+                {(recoverablePass || canExpandDiscover) && <div className="mt-5 grid gap-2">
+                  {recoverablePass && <button type="button" disabled={passBusy} onClick={() => void undoPass(recoverablePass)} className="min-h-11 rounded-xl border border-pink-200/35 bg-pink-400/15 px-4 py-2 text-sm font-bold text-pink-100 hover:bg-pink-400/25 focus-visible:outline-2 focus-visible:outline-pink-300 disabled:opacity-50">
+                    {language === "es" ? "Recuperar último perfil" : "Restore last profile"}
+                  </button>}
+                  {canExpandDiscover && <button type="button" disabled={passBusy} onClick={() => { setDiscoverMode("forYou"); setAgeRange({ min: 18, max: 80 }); setCityFilter(""); setInterestFilter(""); setIntentFilter(""); setPersonIndex(0); }} className="min-h-11 rounded-xl border border-white/15 px-4 py-2 text-sm font-bold text-white/85 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-pink-300 disabled:opacity-50">
+                    {language === "es" ? "Quitar filtros" : "Clear filters"}
+                  </button>}
+                </div>}
+              </div>
+            </section>
+          ) : <><article onClick={() => void openPublicProfile(person)} className="blynk-card relative aspect-[9/14] cursor-pointer overflow-hidden rounded-[2rem]" aria-label={`${person.name}, ${person.age}`}>{person.video ? <video key={person.id} className="absolute inset-0 size-full object-cover" src={person.video} autoPlay muted loop playsInline /> : person.avatarUrl ? <img src={person.avatarUrl} alt={`Photo of ${person.name}`} className="absolute inset-0 size-full object-cover" /> : <div className={`absolute inset-0 grid place-items-center bg-gradient-to-br text-7xl ${person.accent}`}>{person.emoji}</div>}<div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#080812]/90 via-[#080812]/35 to-transparent" /><button onClick={(event) => void toggleProfileLike(event)} className={`soft-button absolute right-4 top-4 flex min-w-14 items-center justify-center gap-1 rounded-full border px-3 py-2 text-sm font-bold backdrop-blur ${person.likedByMe ? "border-pink-300 bg-pink-500/35 text-pink-100" : "border-white/15 bg-black/35 text-white"}`} aria-label={language === "es" ? "Me gusta" : "Like"}>{person.likedByMe ? "♥" : "♡"}<span>{person.likeCount || 0}</span></button><div className="blynk-discover-caption absolute inset-x-0 bottom-0 p-6"><span className="mb-3 inline-flex rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-100">● ONLINE</span><h1 className="text-3xl font-black">{person.name}, {person.age}</h1><p className="mt-2 text-sm leading-6 text-white/85">{person.intro}</p><div className="mt-4 flex flex-wrap gap-2">{person.tags.map((tag) => <span key={tag} className="rounded-full border border-white/15 bg-black/20 px-3 py-1 text-xs font-semibold">{tag}</span>)}</div></div></article><p className="animate-pulse py-3 text-center text-xs text-white/45">↑ {t.swipe}</p><div className="blynk-discover-actions">
             <button type="button" onClick={() => void skipProfile()} disabled={passBusy} className="blynk-discover-pass disabled:cursor-wait disabled:opacity-60" aria-label={language === "es" ? "Pasar: descartar este perfil" : "Pass: dismiss this profile"}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17" /></svg>
               {t.skip}
