@@ -8,7 +8,8 @@ import PushSettings from "@/app/components/PushSettings";
 type Tab = "discover" | "community" | "messages" | "profile";
 type Language = "es" | "en";
 type CommunityComment = { id: string | number; content: string; author: string; authorId?: string; createdAt?: string; parentId?: string | null; hidden?: boolean };
-type CommunityPost = { id: string | number; author: string; authorId?: string; initial: string; time: string; text: string; video?: string; likes: number; commentsEnabled: boolean; comments: CommunityComment[] };
+type CommunityPost = { id: string | number; author: string; authorId?: string; initial: string; time: string; text: string; mediaUrl?: string; likes: number; commentsEnabled: boolean; comments: CommunityComment[] };
+type PostAttachment = { file: File; previewUrl: string };
 type StoredPost = { id: string; user_id: string; caption: string | null; video_url: string | null; comments_enabled?: boolean | null; created_at: string; profiles: { display_name: string }[] | null };
 type StoredComment = { id: string; post_id: string; user_id: string; content: string; created_at: string; parent_id?: string | null; hidden_at?: string | null; profiles: { display_name: string }[] | null };
 type StoredLike = { post_id: string };
@@ -21,6 +22,19 @@ type SafetyAction = { kind: "report" | "block"; targetId: string; targetName: st
 type AccountNotice = { id: string; notice_type: "profile_suspended" | "profile_restored" | "appeal_denied" };
 type BlockedProfile = { id: string; name: string; avatarUrl: string; reason: string };
 
+const mediaExtensions: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+};
+
+function isCommunityPhoto(url: string) {
+  return /\/community-photos\/[^/?#]+\.(?:jpg|png|webp)(?:[?#]|$)/i.test(url);
+}
+
 const people: DiscoverPerson[] = [
   { id: "sofia", name: "Sofía", age: 24, place: "Ciudad de México", emoji: "☕", accent: "from-orange-400 via-rose-500 to-violet-700", intro: "Una caminata, un café y una conversación sin prisa.", tags: ["Travel", "Photography", "Coffee"], intent: "Intentional dating", video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
   { id: "mila", name: "Mila", age: 26, place: "Barcelona", emoji: "🎨", accent: "from-fuchsia-600 via-purple-600 to-sky-700", intro: "Arte, mar y una playlist que cambia cada viernes.", tags: ["Art", "Music", "Yoga"], intent: "New friendships", video: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" },
@@ -28,8 +42,8 @@ const people: DiscoverPerson[] = [
 ];
 
 const copy = {
-  es: { discover: "Descubrir", community: "Comunidad", messages: "Mensajes", profile: "Perfil", forYou: "Para ti", nearby: "Cerca", request: "Solicitar match", skip: "Pasar", swipe: "Desliza hacia arriba para ver otro video", share: "Comparte más allá de las citas", publish: "Publicar", thought: "¿Qué estás pensando?", addVideo: "Agregar video", comments: "Comentarios", comment: "Comentar", send: "Enviar", public: "Público", private: "Privado", hidden: "Oculto", edit: "Editar", delete: "Borrar", settings: "Ajustes", logOut: "Cerrar sesión", gallery: "Galería", addMedia: "Agregar fotos o videos", matched: "¡Solicitud enviada!", profileReady: "Tu perfil", report: "Reportar", block: "Bloquear", hide: "Esconder", reply: "Responder", copy: "Copiar", disableComments: "Desactivar comentarios" },
-  en: { discover: "Discover", community: "Community", messages: "Messages", profile: "Profile", forYou: "For you", nearby: "Nearby", request: "Request match", skip: "Pass", swipe: "Swipe up for another video", share: "Share beyond dating", publish: "Publish", thought: "What are you thinking?", addVideo: "Add video", comments: "Comments", comment: "Comment", send: "Send", public: "Public", private: "Private", hidden: "Hidden", edit: "Edit", delete: "Delete", settings: "Settings", logOut: "Log out", gallery: "Gallery", addMedia: "Add photos or videos", matched: "Match request sent!", profileReady: "Your profile", report: "Report", block: "Block", hide: "Hide", reply: "Reply", copy: "Copy", disableComments: "Disable comments" },
+  es: { discover: "Descubrir", community: "Comunidad", messages: "Mensajes", profile: "Perfil", forYou: "Para ti", nearby: "Cerca", request: "Solicitar match", skip: "Pasar", swipe: "Desliza hacia arriba para ver otro video", share: "Comparte más allá de las citas", publish: "Publicar", thought: "¿Qué estás pensando?", addPostMedia: "Agregar foto o video", comments: "Comentarios", comment: "Comentar", send: "Enviar", public: "Público", private: "Privado", hidden: "Oculto", edit: "Editar", delete: "Borrar", settings: "Ajustes", logOut: "Cerrar sesión", gallery: "Galería", addMedia: "Agregar fotos o videos", matched: "¡Solicitud enviada!", profileReady: "Tu perfil", report: "Reportar", block: "Bloquear", hide: "Esconder", reply: "Responder", copy: "Copiar", disableComments: "Desactivar comentarios" },
+  en: { discover: "Discover", community: "Community", messages: "Messages", profile: "Profile", forYou: "For you", nearby: "Nearby", request: "Request match", skip: "Pass", swipe: "Swipe up for another video", share: "Share beyond dating", publish: "Publish", thought: "What are you thinking?", addPostMedia: "Add photo or video", comments: "Comments", comment: "Comment", send: "Send", public: "Public", private: "Private", hidden: "Hidden", edit: "Edit", delete: "Delete", settings: "Settings", logOut: "Log out", gallery: "Gallery", addMedia: "Add photos or videos", matched: "Match request sent!", profileReady: "Your profile", report: "Report", block: "Block", hide: "Hide", reply: "Reply", copy: "Copy", disableComments: "Disable comments" },
 };
 
 export default function BlynkHome() {
@@ -47,9 +61,10 @@ export default function BlynkHome() {
   const [incomingAlert, setIncomingAlert] = useState<{ name: string; hasMedia: boolean; kind: "message" | "match" } | null>(null);
   const [postText, setPostText] = useState("");
   const [posts, setPosts] = useState<CommunityPost[]>([{ id: 1, author: "Luis Hernandez", initial: "L", time: "Ahora", text: "Busco una conversación honesta. ¿Cuál es el mejor consejo que te han dado?", likes: 4, commentsEnabled: true, comments: [{ id: "welcome-comment", content: "Me encanta esa pregunta ✨", author: "Blynk member" }] }]);
-  const [postVideo, setPostVideo] = useState("");
-  const [postVideoFile, setPostVideoFile] = useState<File | null>(null);
+  const [postAttachment, setPostAttachment] = useState<PostAttachment | null>(null);
   const [uploadingPost, setUploadingPost] = useState(false);
+  const postInFlight = useRef(false);
+  const uploadedPostMedia = useRef<{ attachment: PostAttachment; userId: string; url: string } | null>(null);
   const [comment, setComment] = useState("");
   const [menu, setMenu] = useState<string | number | null>(null);
   const [commentMenu, setCommentMenu] = useState<string | number | null>(null);
@@ -217,10 +232,7 @@ export default function BlynkHome() {
     finally { setPushBusy(false); }
   };
   const validateMediaFile = (file: File) => {
-    const allowedImages = ["image/jpeg", "image/png", "image/webp"];
-    const allowedVideos = ["video/mp4", "video/webm", "video/quicktime"];
-    const allowed = [...allowedImages, ...allowedVideos];
-    if (!allowed.includes(file.type)) { notify(language === "es" ? "Formato no permitido. Usa JPG, PNG, WebP, MP4, WebM o MOV." : "Unsupported format. Use JPG, PNG, WebP, MP4, WebM, or MOV."); return false; }
+    if (!Object.hasOwn(mediaExtensions, file.type)) { notify(language === "es" ? "Formato no permitido. Usa JPG, PNG, WebP, MP4, WebM o MOV." : "Unsupported format. Use JPG, PNG, WebP, MP4, WebM, or MOV."); return false; }
     const maxBytes = file.type.startsWith("video/") ? 15 * 1024 * 1024 : 10 * 1024 * 1024;
     if (file.size > maxBytes) { notify(file.type.startsWith("video/") ? (language === "es" ? "Los videos deben pesar menos de 15 MB." : "Videos must be under 15 MB.") : (language === "es" ? "Las fotos deben pesar menos de 10 MB." : "Photos must be under 10 MB.")); return false; }
     return true;
@@ -383,26 +395,72 @@ export default function BlynkHome() {
     if (deltaY > 0) nextPerson(); else previousPerson();
   };
   const addPost = async () => {
+    const caption = postText.trim();
+    if ((!caption && !postAttachment) || postInFlight.current) return;
     if (!requireActiveAccount()) return;
-    if ((!postText.trim() && !postVideo) || uploadingPost) return;
-    let publishedVideo = postVideo;
-    setUploadingPost(true);
-    if (postVideoFile && isSupabaseConfigured && supabase) {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) { setUploadingPost(false); notify(language === "es" ? "Inicia sesión para publicar un video." : "Sign in to publish a video."); return; }
-      const extension = postVideoFile.name.split(".").pop()?.toLowerCase() || "mp4";
-      const path = `${user.id}/${crypto.randomUUID()}.${extension}`;
-      const { error: uploadError } = await supabase.storage.from("blynk-media").upload(path, postVideoFile, { contentType: postVideoFile.type, upsert: false });
-      if (uploadError) { setUploadingPost(false); notify(`${language === "es" ? "No se pudo subir el video" : "Video upload failed"}: ${uploadError.message}`); return; }
-      publishedVideo = supabase.storage.from("blynk-media").getPublicUrl(path).data.publicUrl;
-      const { error: profileError } = await supabase.from("profiles").upsert({ id: user.id, display_name: user.user_metadata.display_name || user.email?.split("@")[0] || "Blynk user" });
-      if (profileError) { setUploadingPost(false); notify(`${language === "es" ? "No se pudo preparar tu perfil" : "Could not prepare your profile"}: ${profileError.message}`); return; }
-      const { error: postError } = await supabase.from("posts").insert({ user_id: user.id, caption: postText.trim() || null, video_url: publishedVideo });
-      if (postError) { setUploadingPost(false); notify(`${language === "es" ? "Video subido, pero no se pudo guardar la publicación" : "Video uploaded, but the post could not be saved"}: ${postError.message}`); return; }
+    if (!supabase) {
+      notify(language === "es" ? "Comunidad no está disponible en este momento." : "Community is unavailable right now.");
+      return;
     }
-    setPosts((items) => [{ id: Date.now(), author: myProfile.displayName || "Blynk user", initial: (myProfile.displayName || "B").slice(0, 1).toUpperCase(), time: language === "es" ? "Ahora" : "Now", text: postText.trim(), video: publishedVideo || undefined, likes: 0, commentsEnabled: true, comments: [] }, ...items]);
-    setPostText(""); setPostVideo(""); setPostVideoFile(null); setUploadingPost(false);
-    notify(language === "es" ? "Publicación compartida" : "Post shared");
+
+    postInFlight.current = true;
+    setUploadingPost(true);
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        notify(language === "es" ? "Inicia sesión para publicar." : "Sign in to publish.");
+        return;
+      }
+
+      let mediaUrl: string | undefined;
+      if (postAttachment) {
+        const previousUpload = uploadedPostMedia.current;
+        if (previousUpload?.attachment === postAttachment && previousUpload.userId === user.id) {
+          mediaUrl = previousUpload.url;
+        } else {
+          const { file } = postAttachment;
+          const folder = file.type.startsWith("image/") ? `${user.id}/community-photos` : user.id;
+          const path = `${folder}/${crypto.randomUUID()}.${mediaExtensions[file.type]}`;
+          const bucket = supabase.storage.from("blynk-media");
+          const { error } = await bucket.upload(path, file, { contentType: file.type, upsert: false });
+          if (error) {
+            notify(language === "es" ? "No pudimos subir el archivo. Inténtalo de nuevo." : "We couldn't upload the file. Try again.");
+            return;
+          }
+          mediaUrl = bucket.getPublicUrl(path).data.publicUrl;
+          uploadedPostMedia.current = { attachment: postAttachment, userId: user.id, url: mediaUrl };
+        }
+      }
+
+      // Keep the existing attachment column. The photo folder distinguishes images from older videos.
+      const { data, error } = await supabase.from("posts")
+        .insert({ user_id: user.id, caption: caption || null, video_url: mediaUrl ?? null })
+        .select("id").single();
+      if (error || !data) throw error ?? new Error("Missing community post");
+
+      const author = myProfile.displayName || "Blynk user";
+      setPosts((items) => [{
+        id: data.id,
+        author,
+        authorId: user.id,
+        initial: author.slice(0, 1).toUpperCase(),
+        time: language === "es" ? "Ahora" : "Now",
+        text: caption,
+        mediaUrl,
+        likes: 0,
+        commentsEnabled: true,
+        comments: [],
+      }, ...items.filter((item) => item.id !== data.id)]);
+      setPostText("");
+      setPostAttachment(null);
+      uploadedPostMedia.current = null;
+      notify(language === "es" ? "Publicación compartida" : "Post shared");
+    } catch {
+      notify(language === "es" ? "No pudimos guardar la publicación. Tu borrador sigue aquí." : "We couldn't save the post. Your draft is still here.");
+    } finally {
+      postInFlight.current = false;
+      setUploadingPost(false);
+    }
   };
   const addComment = async (postId: string | number) => {
     if (!requireActiveAccount()) return;
@@ -644,7 +702,13 @@ export default function BlynkHome() {
     }
     if (uploaded.length) { setMedia((current) => [...current, ...uploaded]); notify(language === "es" ? "Galería actualizada." : "Gallery updated."); }
   };
-  const selectPostVideo = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file && validateMediaFile(file) && file.type.startsWith("video/")) { setPostVideoFile(file); setPostVideo(URL.createObjectURL(file)); } };
+  const selectPostMedia = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || postInFlight.current || !validateMediaFile(file)) return;
+    uploadedPostMedia.current = null;
+    setPostAttachment({ file, previewUrl: URL.createObjectURL(file) });
+  };
   const selectMessageMedia = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -999,10 +1063,16 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
       ]);
       const likesByPost = (likes as unknown as StoredLike[] | null)?.reduce<Record<string, number>>((total, like) => ({ ...total, [like.post_id]: (total[like.post_id] || 0) + 1 }), {}) || {};
       const commentsByPost = (comments as unknown as StoredComment[] | null)?.reduce<Record<string, CommunityComment[]>>((total, entry) => ({ ...total, [entry.post_id]: [...(total[entry.post_id] || []), { id: entry.id, content: entry.content, author: entry.profiles?.[0]?.display_name || "Blynk user", authorId: entry.user_id, createdAt: entry.created_at, parentId: entry.parent_id, hidden: Boolean(entry.hidden_at) }] }), {}) || {};
-      setPosts(storedPosts.map((post) => { const displayName = post.profiles?.[0]?.display_name || "Blynk user"; return { id: post.id, author: displayName, authorId: post.user_id, initial: displayName.slice(0, 1).toUpperCase(), time: new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { dateStyle: "medium" }).format(new Date(post.created_at)), text: post.caption || "", video: post.video_url || undefined, likes: likesByPost[post.id] || 0, commentsEnabled: post.comments_enabled !== false, comments: (commentsByPost[post.id] || []).filter((entry) => !entry.hidden) }; }));
+      setPosts(storedPosts.map((post) => { const displayName = post.profiles?.[0]?.display_name || "Blynk user"; return { id: post.id, author: displayName, authorId: post.user_id, initial: displayName.slice(0, 1).toUpperCase(), time: new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", { dateStyle: "medium" }).format(new Date(post.created_at)), text: post.caption || "", mediaUrl: post.video_url || undefined, likes: likesByPost[post.id] || 0, commentsEnabled: post.comments_enabled !== false, comments: (commentsByPost[post.id] || []).filter((entry) => !entry.hidden) }; }));
     }
     void loadCommunity();
   }, [language]);
+
+  useEffect(() => {
+    const previewUrl = postAttachment?.previewUrl;
+    if (!previewUrl) return;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [postAttachment]);
 
   // A few legacy interface labels were written directly into the early prototype.
   // Keep them aligned with the selected language until they are moved into the copy map.
@@ -1182,14 +1252,36 @@ useEffect(() => { const onRequestClick = (event: MouseEvent) => { const button =
         {tab === "community" && <div className="mx-auto max-w-xl space-y-4">
           <div><p className="text-sm font-semibold text-pink-300">Blynk Community</p><h1 className="mt-1 text-2xl font-black">{t.share}</h1></div>
           <div className="blynk-card rounded-3xl p-4">
-            <textarea value={postText} onChange={(event) => setPostText(event.target.value)} placeholder={t.thought} className="min-h-24 w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/35" />
-            {postVideo && <div className="relative mt-3 overflow-hidden rounded-2xl border border-white/10"><video src={postVideo} className="max-h-72 w-full bg-black object-contain" controls muted playsInline /><button onClick={() => { setPostVideo(""); setPostVideoFile(null); }} className="absolute right-2 top-2 rounded-full bg-black/70 px-3 py-1 text-xs font-bold">× Quitar</button></div>}
-            <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3"><label className="cursor-pointer text-sm font-bold text-white/60">▣ {t.addVideo}<input onChange={selectPostVideo} className="hidden" type="file" accept="video/*" /></label><button disabled={uploadingPost} onClick={addPost} className="soft-button pink-gradient rounded-xl px-5 py-2.5 text-sm font-bold disabled:cursor-wait disabled:opacity-60">{uploadingPost ? (language === "es" ? "Subiendo…" : "Uploading…") : t.publish}</button></div>
+            <textarea value={postText} disabled={uploadingPost} onChange={(event) => setPostText(event.target.value)} placeholder={t.thought} className="min-h-24 w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/35" />
+            {postAttachment && <div className="relative mt-3 overflow-hidden rounded-2xl border border-white/10 bg-black/20">
+              {postAttachment.file.type.startsWith("image/") ? (
+                <img src={postAttachment.previewUrl} alt={language === "es" ? "Vista previa de la foto" : "Photo preview"} className="max-h-72 w-full object-contain" />
+              ) : (
+                <video src={postAttachment.previewUrl} className="max-h-72 w-full bg-black object-contain" controls muted playsInline />
+              )}
+              <button type="button" disabled={uploadingPost} onClick={() => { uploadedPostMedia.current = null; setPostAttachment(null); }} className="absolute right-2 top-2 min-h-10 rounded-full bg-black/75 px-3 text-xs font-bold disabled:opacity-60">
+                × {language === "es" ? "Quitar archivo" : "Remove file"}
+              </button>
+            </div>}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
+              <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-1 text-sm font-bold text-pink-200 focus-within:outline-2 focus-within:outline-pink-300">
+                <span aria-hidden="true">▣</span> {t.addPostMedia}
+                <input onChange={selectPostMedia} disabled={uploadingPost} className="sr-only" type="file" accept={Object.keys(mediaExtensions).join(",")} />
+              </label>
+              <button type="button" disabled={uploadingPost || (!postText.trim() && !postAttachment)} onClick={() => void addPost()} className="soft-button pink-gradient min-h-11 rounded-xl px-5 py-2.5 text-sm font-bold disabled:opacity-60">
+                {uploadingPost ? (language === "es" ? "Publicando…" : "Publishing…") : t.publish}
+              </button>
+            </div>
           </div>
           {posts.map((post) => <article key={post.id} className="blynk-card rounded-3xl p-5">
             <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-gradient-to-br from-pink-400 to-violet-600 font-black">{post.initial}</span><div><p className="font-bold">{post.author}</p><p className="text-xs text-white/45">{post.time} · {t.public}</p></div><button onClick={() => setMenu(menu === post.id ? null : post.id)} className="ml-auto rounded-full p-2 text-white/50 hover:bg-white/10">•••</button></div>
             {menu === post.id && <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/40 p-2 text-xs shadow-xl"><button onClick={() => void updateCommentsEnabled(post)} className="rounded-xl bg-white/5 px-3 py-2 text-left hover:bg-white/10">{post.commentsEnabled ? t.disableComments : (language === "es" ? "Activar comentarios" : "Enable comments")}</button><button onClick={() => { notify(language === "es" ? "Selecciona un comentario para reportarlo." : "Select a comment to report it."); setMenu(null); }} className="rounded-xl bg-white/5 px-3 py-2 text-left hover:bg-white/10">{t.report}</button><button onClick={() => { notify(language === "es" ? "Selecciona un comentario para bloquear a esa persona." : "Select a comment to block that person."); setMenu(null); }} className="rounded-xl bg-white/5 px-3 py-2 text-left hover:bg-white/10">{t.block}</button>{post.authorId && <button onClick={() => setPosts((items) => items.filter((item) => item.id !== post.id))} className="rounded-xl bg-rose-400/10 px-3 py-2 text-left text-rose-200 hover:bg-rose-400/20">{t.delete}</button>}</div>}
-            {post.text && <p className="mt-4 leading-6 text-white/90">{post.text}</p>}{post.video && <video src={post.video} className="mt-4 w-full rounded-2xl bg-black" controls autoPlay muted loop playsInline />}
+            {post.text && <p className="mt-4 whitespace-pre-wrap break-words leading-6 text-white/90">{post.text}</p>}
+            {post.mediaUrl && (isCommunityPhoto(post.mediaUrl) ? (
+              <img src={post.mediaUrl} alt={language === "es" ? `Foto compartida por ${post.author}` : `Photo shared by ${post.author}`} loading="lazy" className="mt-4 max-h-[32rem] w-full rounded-2xl bg-black/20 object-contain" />
+            ) : (
+              <video src={post.mediaUrl} className="mt-4 w-full rounded-2xl bg-black" controls autoPlay muted loop playsInline />
+            ))}
             <div className="mt-4 flex gap-5 border-t border-white/10 pt-3 text-sm text-white/55"><button onClick={() => addLike(post.id)}>♡ {post.likes}</button><span>◌ {post.comments.length} {t.comments.toLowerCase()}</span></div>
             {post.commentsEnabled && <div className="mt-3 space-y-2">{post.comments.map((entry) => <div className="rounded-2xl bg-white/5 p-3 text-sm text-white/75" key={entry.id}><div className="flex items-start gap-2"><div className="min-w-0 flex-1"><p className="font-bold text-white/90">{entry.author}{entry.parentId && <span className="ml-2 text-xs font-normal text-pink-200">↳ {language === "es" ? "respuesta" : "reply"}</span>}</p><p className="mt-1 break-words">{entry.content}</p></div><button onClick={() => setCommentMenu(commentMenu === entry.id ? null : entry.id)} aria-label={language === "es" ? "Opciones del comentario" : "Comment options"} className="rounded-lg px-2 py-1 text-white/50 hover:bg-white/10">•••</button></div>{commentMenu === entry.id && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-3 text-xs"><button onClick={() => void runCommentAction(post, entry, "reply")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">↩ {t.reply}</button><button onClick={() => void runCommentAction(post, entry, "copy")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">⧉ {t.copy}</button><button onClick={() => void runCommentAction(post, entry, "hide")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">◉ {t.hide}</button><button onClick={() => void runCommentAction(post, entry, "report")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">⚑ {t.report}</button><button onClick={() => void runCommentAction(post, entry, "block")} className="rounded-lg bg-white/5 px-2 py-2 text-left hover:bg-white/10">⊘ {t.block}</button><button onClick={() => void runCommentAction(post, entry, "delete")} className="rounded-lg bg-rose-400/10 px-2 py-2 text-left text-rose-200 hover:bg-rose-400/20">× {t.delete}</button></div>}</div>)}<div className="rounded-2xl border border-white/10 bg-black/15 p-2"><div className="flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} className="min-w-0 flex-1 rounded-xl bg-transparent px-3 py-2 text-sm outline-none" placeholder={replyTo?.postId === post.id ? `${t.reply} ${replyTo.author}…` : t.comment} /><button onClick={() => void addComment(post.id)} className="rounded-xl bg-white/10 px-3 text-sm font-bold hover:bg-white/15">{t.send}</button></div>{replyTo?.postId === post.id && <button onClick={() => { setReplyTo(null); setComment(""); }} className="px-3 py-1 text-xs text-pink-200">× {language === "es" ? `Responder a ${replyTo.author}` : `Replying to ${replyTo.author}`}</button>}</div></div>}
           </article>)}
