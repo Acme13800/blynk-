@@ -297,6 +297,12 @@ button[class*="z-[70]"] > span:first-child::before { content: ""; width: 30px; h
     right: 0;
     text-align: left;
   }
+  .blynk-discover-undo {
+    margin-inline: 1rem;
+  }
+  .blynk-video-feed > .blynk-discover-undo + article {
+    height: max(16rem, calc(100dvh - 20rem - env(safe-area-inset-bottom)));
+  }
   .blynk-video-feed > article + p { display: none; }
   .blynk-discover-actions {
     margin: .75rem 1rem 0;
